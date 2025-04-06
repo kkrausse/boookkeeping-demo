@@ -13,9 +13,16 @@ class Api::TransactionsController < ApplicationController
   end
 
   def create
+    transaction, flags = parse_transaction(transaction_params)
     @transaction = Transaction.new(transaction_params)
 
+    puts "creating transaction"
+    puts transaction_params
+    puts @transaction
     if @transaction.save
+      flags.each do |flag|
+        @transaction
+      end
       render json: @transaction, status: :created
     else
       render json: @transaction.errors, status: :unprocessable_entity
@@ -72,6 +79,36 @@ class Api::TransactionsController < ApplicationController
   end
 
   private
+
+  def parse_transaction(params)
+    flags = []
+    transaction = nil
+
+    # Parse and validate fields
+    description = params[:description]
+    category = params[:category]
+    amount = parse_amount(params[:amount])
+    datetime = parse_datetime(params[:datetime])
+
+    if description.blank?
+      flags << TransactionFlag.new(flag_type: "missing_data", message: "empty description")
+    end
+
+    if category.blank?
+      flags << TransactionFlag.new(flag_type: "missing_data", message: "empty category")
+    end
+
+    [ transaction, flags ]
+  end
+
+  def parse_amount(raw)
+    return nil if raw.nil?
+    raw.to_s.gsub(/[^\d.-]/, "").to_f
+  end
+
+  def parse_datetime(raw)
+    DateTime.parse(raw) rescue nil
+  end
 
   def set_transaction
     @transaction = Transaction.find(params[:id])

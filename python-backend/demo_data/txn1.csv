@@ -1,4 +1,4 @@
-description,category,amount,datetime
+description,category,amount,timestamp
 "Groceries","Food",50.75,"2025-04-05 08:30:00"
 "Coffee","Food",5.25,"2025-04-05 09:00:00"
 "Subscription","Entertainment",15.00,"2025-04-05 10:00:00"

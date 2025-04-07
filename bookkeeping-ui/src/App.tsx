@@ -1,86 +1,96 @@
 import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
+import axios from 'axios'
+import {
+  QueryClient,
+  QueryClientProvider,
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import './App.css'
+import { TransactionTable, TransactionTableProps } from './components/TransactionTable';
+import { Transaction, fetchTransactions, deleteTransaction, uploadCSV, TRANSACTION_KEYS } from './api/transactions';
 
-const CsvUpload = () => {
-  const [file, setFile] = useState<File | null>(null);
+
+const queryClient = new QueryClient()
+
+function CsvUpload() {
+  const { mutate: fileMutate } = useMutation<void, Error, File>({
+    mutationFn: uploadCSV,
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: TRANSACTION_KEYS.all});
+    },
+    onError: (err) => {
+      console.error('Delete failed:', err);
+    },
+  });
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      setFile(event.target.files[0]);
+    if (event.target.files && event.target.files[0]) {
+      fileMutate(event.target.files[0])
     }
-  };
+  }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (!file) {
-      alert("Please select a file first.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      // Send request to '/api/transactions/upload_csv', which is proxied to your Rails server
-      const response = await fetch("/api/transactions/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to upload file.");
-      }
-
-      const result = await response.json();
-      alert(result.message); // Show success message from backend
-    } catch (error) {
-      console.error("Error:", error);
-      alert("Error uploading file.");
-    }
-  };
 
   return (
-    <div>
-      <form onSubmit={handleSubmit}>
-        <input type="file" accept=".csv" onChange={handleFileChange} />
-        <button type="submit">Upload CSV</button>
-      </form>
-    </div>
-  );
-};
+    <input type="file" accept=".csv" onChange={handleFileChange} />
+  )
+}
+
+function TransactionsPage() {
+  const queryClient = useQueryClient();
+
+  // Fetch transactions
+  const { data, isLoading, error } = useQuery<Transaction[], Error>({
+    queryKey: TRANSACTION_KEYS.all,
+    queryFn: () => fetchTransactions().then(r => r.data),
+  });
 
 
-function App() {
-  const [count, setCount] = useState(0)
+  // Delete mutation
+  const { mutate: deleteMutate } = useMutation<void, Error, { transaction_id: number }>({
+    mutationFn: deleteTransaction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: TRANSACTION_KEYS.all});
+    },
+    onError: (err) => {
+      console.error('Delete failed:', err);
+    },
+  });
 
+
+  if (isLoading) return <div>Loading transactions...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  const transactions: Transaction[] = data || [];
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
       <CsvUpload />
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+      <TransactionTable tableProps={({
+        transactions: transactions,
+        currentSort: { column: 'datetime', order: 'desc' },
+        onChangeSort: (x) => console.log('sorting', x),
+        onPageForward: (x) => console.log(x),
+        onPageBack: (x) => console.log(x),
+        currentPage: 0,
+        hasNextPage: true,
+        onEdit: (x) => console.log(x),
+        onDelete: (x) => console.log(x),
+
+      })}/>
+      </>
   )
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TransactionsPage />
+    </QueryClientProvider>
+  );
 }
 
 export default App

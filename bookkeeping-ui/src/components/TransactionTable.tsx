@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Transaction, TransactionSort, TransactionSortColumn, TRANSACTION_KEYS } from '../api/transactions';
+import { Transaction, TransactionSort, TransactionSortColumn, TRANSACTION_KEYS, updateTransaction } from '../api/transactions';
 import { AlertTriangle, Check, X, Loader2 } from 'lucide-react';
 import './TransactionTable.css';
 
@@ -36,11 +36,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
 
   // Update transaction mutation
   const updateMutation = useMutation({
-    mutationFn: async (updatedTransaction: Partial<Transaction> & { id: number }) => {
-      // Simulate API call with 1 second delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Updating transaction:', updatedTransaction);
-      return updatedTransaction;
+    mutationFn: (updatedTransaction: Partial<Transaction> & { id: number }) => {
+      return updateTransaction(updatedTransaction);
     },
     onSuccess: () => {
       // Invalidate and refetch queries related to transactions
@@ -60,7 +57,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     },
     onSuccess: () => {
       // Invalidate and refetch queries related to transactions
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: [TRANSACTION_KEYS.all] });
     }
   });
 
@@ -101,7 +98,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     if (editingId === transaction.id) {
       // Save changes
       updateMutation.mutate({
-        id: transaction.id,
+        ...transaction,
         ...editedValues
       });
     } else {
@@ -168,6 +165,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                       type="text"
                       value={editedValues.description !== undefined ? editedValues.description : transaction.description}
                       onChange={(e) => handleInputChange('description', e.target.value)}
+                      disabled={updateMutation.isPending}
                     />
                   ) : (
                     transaction.description
@@ -179,6 +177,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                       type="text"
                       value={editedValues.category !== undefined ? editedValues.category : transaction.category}
                       onChange={(e) => handleInputChange('category', e.target.value)}
+                      disabled={updateMutation.isPending}
                     />
                   ) : (
                     transaction.category
@@ -191,6 +190,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                       value={editedValues.amount !== undefined ? editedValues.amount : transaction.amount}
                       onChange={(e) => handleInputChange('amount', e.target.value)}
                       className={parseFloat(editedValues.amount || transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}
+                      disabled={updateMutation.isPending}
                     />
                   ) : (
                     formatAmount(transaction.amount)
@@ -204,6 +204,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                         new Date(editedValues.datetime).toISOString().slice(0, 16) :
                         new Date(transaction.datetime).toISOString().slice(0, 16)}
                       onChange={(e) => handleInputChange('datetime', new Date(e.target.value).toISOString())}
+                      disabled={updateMutation.isPending}
                     />
                   ) : (
                     formatDate(transaction.datetime)

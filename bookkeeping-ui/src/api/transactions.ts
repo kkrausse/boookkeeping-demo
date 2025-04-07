@@ -26,6 +26,12 @@ export const deleteTransaction = async (args: {transaction_id: number}) => {
   await new Promise((r) => setTimeout(r, 1000));
 };
 
+export async function updateTransaction(transaction: Partial<Transaction> & { id: number }): Promise<Transaction> {
+  // DRF ModelViewSet supports PUT requests by default even with commented update method
+  const response = await api.put(`/transactions/${transaction.id}/`, transaction);
+  return response.data;
+}
+
 export async function fetchTransactions(): Promise<{ data: Transaction[] }> {
   let r = await api.get('/transactions/');
   return r

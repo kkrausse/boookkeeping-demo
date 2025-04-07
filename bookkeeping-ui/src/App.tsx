@@ -45,7 +45,7 @@ function TransactionsPage() {
 
   // Fetch transactions
   const { data, isLoading, error } = useQuery<Transaction[], Error>({
-    queryKey: TRANSACTION_KEYS.all,
+    queryKey: [TRANSACTION_KEYS.all],
     queryFn: () => fetchTransactions().then(r => r.data),
   });
 
@@ -54,7 +54,7 @@ function TransactionsPage() {
   const { mutate: deleteMutate } = useMutation<void, Error, { transaction_id: number }>({
     mutationFn: deleteTransaction,
     onSuccess: () => {
-      queryClient.invalidateQueries({queryKey: TRANSACTION_KEYS.all});
+      queryClient.invalidateQueries({queryKey: [TRANSACTION_KEYS.all]});
     },
     onError: (err) => {
       console.error('Delete failed:', err);

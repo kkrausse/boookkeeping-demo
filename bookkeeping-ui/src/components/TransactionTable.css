@@ -104,13 +104,18 @@
 }
 
 .edit-button,
-.delete-button {
+.delete-button,
+.save-button,
+.cancel-button {
   padding: 6px 12px;
   margin-right: 4px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .edit-button {
@@ -123,12 +128,54 @@
   color: white;
 }
 
+.save-button {
+  background-color: #2ecc71;
+  color: white;
+}
+
+.cancel-button {
+  background-color: #95a5a6;
+  color: white;
+}
+
 .edit-button:hover {
   background-color: #3a7bc8;
 }
 
 .delete-button:hover {
   background-color: #d62c1a;
+}
+
+.save-button:hover:not(:disabled) {
+  background-color: #27ae60;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background-color: #7f8c8d;
+}
+
+.save-button:disabled,
+.cancel-button:disabled,
+.delete-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.spinner-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.editing-row {
+  background-color: #f8f9fa;
 }
 
 .pagination {

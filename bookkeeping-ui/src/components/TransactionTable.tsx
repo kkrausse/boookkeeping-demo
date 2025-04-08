@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Transaction, TransactionSort, TransactionSortColumn, TRANSACTION_KEYS, updateTransaction } from '../api/transactions';
-import { AlertTriangle, Check, X, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, X, Loader2, Edit, Trash2, Info } from 'lucide-react';
 import './TransactionTable.css';
 
 interface TransactionTableProps {
@@ -135,30 +135,50 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
       <table className="transaction-table">
         <thead>
           <tr>
+            <th onClick={() => handleSort('datetime')}>
+              Date {renderSortArrow('datetime')}
+            </th>
+            <th onClick={() => handleSort('amount')}>
+              Amount {renderSortArrow('amount')}
+            </th>
             <th onClick={() => handleSort('description')}>
               Description {renderSortArrow('description')}
             </th>
             <th>Category</th>
-            <th onClick={() => handleSort('amount')}>
-              Amount {renderSortArrow('amount')}
-            </th>
-            <th onClick={() => handleSort('datetime')}>
-              Date {renderSortArrow('datetime')}
-            </th>
-            <th onClick={() => handleSort('created_at')}>
-              Created {renderSortArrow('created_at')}
-            </th>
-            <th onClick={() => handleSort('updated_at')}>
-              Updated {renderSortArrow('updated_at')}
-            </th>
-            <th>Flags</th>
-            <th>Actions</th>
+            <th className="actions-column">Actions</th>
           </tr>
         </thead>
         <tbody>
           {transactions.map(transaction => (
             <React.Fragment key={transaction.id}>
               <tr className={editingId === transaction.id ? 'editing-row' : ''}>
+                <td>
+                  {editingId === transaction.id && isFieldEditable('datetime') ? (
+                    <input
+                      type="datetime-local"
+                      value={editedValues.datetime !== undefined ?
+                        new Date(editedValues.datetime).toISOString().slice(0, 16) :
+                        new Date(transaction.datetime).toISOString().slice(0, 16)}
+                      onChange={(e) => handleInputChange('datetime', new Date(e.target.value).toISOString())}
+                      disabled={updateMutation.isPending}
+                    />
+                  ) : (
+                    formatDate(transaction.datetime)
+                  )}
+                </td>
+                <td className={parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}>
+                  {editingId === transaction.id && isFieldEditable('amount') ? (
+                    <input
+                      type="text"
+                      value={editedValues.amount !== undefined ? editedValues.amount : transaction.amount}
+                      onChange={(e) => handleInputChange('amount', e.target.value)}
+                      className={parseFloat(editedValues.amount || transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}
+                      disabled={updateMutation.isPending}
+                    />
+                  ) : (
+                    formatAmount(transaction.amount)
+                  )}
+                </td>
                 <td>
                   {editingId === transaction.id && isFieldEditable('description') ? (
                     <input
@@ -183,110 +203,99 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                     transaction.category
                   )}
                 </td>
-                <td className={parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}>
-                  {editingId === transaction.id && isFieldEditable('amount') ? (
-                    <input
-                      type="text"
-                      value={editedValues.amount !== undefined ? editedValues.amount : transaction.amount}
-                      onChange={(e) => handleInputChange('amount', e.target.value)}
-                      className={parseFloat(editedValues.amount || transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}
-                      disabled={updateMutation.isPending}
-                    />
-                  ) : (
-                    formatAmount(transaction.amount)
-                  )}
-                </td>
-                <td>
-                  {editingId === transaction.id && isFieldEditable('datetime') ? (
-                    <input
-                      type="datetime-local"
-                      value={editedValues.datetime !== undefined ?
-                        new Date(editedValues.datetime).toISOString().slice(0, 16) :
-                        new Date(transaction.datetime).toISOString().slice(0, 16)}
-                      onChange={(e) => handleInputChange('datetime', new Date(e.target.value).toISOString())}
-                      disabled={updateMutation.isPending}
-                    />
-                  ) : (
-                    formatDate(transaction.datetime)
-                  )}
-                </td>
-                <td>{formatDate(transaction.created_at)}</td>
-                <td>{formatDate(transaction.updated_at)}</td>
-                <td>
-                  {transaction.flags.length > 0 && (
-                    <button
-                      className="flag-button"
-                      onClick={() => toggleFlag(transaction.id)}
-                      title={`${transaction.flags.length} flags`}
-                    >
-                      <AlertTriangle className="alert-icon" size={16} />
-                      <span className="flag-count">{transaction.flags.length}</span>
-                    </button>
-                  )}
-                </td>
                 <td className="action-buttons">
                   {editingId === transaction.id ? (
                     <>
                       <button
-                        className="save-button"
+                        className="icon-button save-button"
                         onClick={() => handleEdit(transaction)}
                         disabled={updateMutation.isPending}
+                        title="Save changes"
                       >
                         {updateMutation.isPending ? (
-                          <Loader2 className="spinner-icon" size={14} />
+                          <Loader2 className="spinner-icon" size={18} />
                         ) : (
-                          <Check size={14} />
+                          <Check size={18} />
                         )}
-                        Save
                       </button>
                       <button
-                        className="cancel-button"
+                        className="icon-button cancel-button"
                         onClick={handleCancelEdit}
                         disabled={updateMutation.isPending}
+                        title="Cancel"
                       >
-                        <X size={14} />
+                        <X size={18} />
                       </button>
                     </>
                   ) : (
                     <>
                       <button
-                        className="edit-button"
-                        onClick={() => handleEdit(transaction)}
+                        className="icon-button info-button"
+                        onClick={() => toggleFlag(transaction.id)}
+                        title="Transaction details"
                       >
-                        Edit
+                        <Info size={18} />
+                        {transaction.flags.length > 0 && (
+                          <span className="flag-count">{transaction.flags.length}</span>
+                        )}
                       </button>
                       <button
-                        className="delete-button"
+                        className="icon-button edit-button"
+                        onClick={() => handleEdit(transaction)}
+                        title="Edit transaction"
+                      >
+                        <Edit size={18} />
+                      </button>
+                      <button
+                        className="icon-button delete-button"
                         onClick={() => handleDelete(transaction.id)}
                         disabled={deleteMutation.isPending && deleteMutation.variables === transaction.id}
+                        title="Delete transaction"
                       >
                         {deleteMutation.isPending && deleteMutation.variables === transaction.id ? (
-                          <Loader2 className="spinner-icon" size={14} />
+                          <Loader2 className="spinner-icon" size={18} />
                         ) : (
-                          'Delete'
+                          <Trash2 size={18} />
                         )}
                       </button>
                     </>
                   )}
                 </td>
               </tr>
-              {expandedFlags[transaction.id] && transaction.flags.length > 0 && (
+              {expandedFlags[transaction.id] && (
                 <tr className="flag-details-row">
-                  <td colSpan={8}>
+                  <td colSpan={5}>
                     <div className="flag-details">
-                      <h4>Transaction Flags</h4>
-                      <ul>
-                        {transaction.flags.map((flag, idx) => (
-                          <li key={idx} className="flag-item">
-                            <strong>{flag.flag_type}</strong>: {flag.message}
-                            {flag.duplicates_transaction && (
-                              <div className="duplicate-info">
-                                Duplicates Transaction ID: {flag.duplicates_transaction}
-                              </div>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      <h4>Transaction Details</h4>
+                      <div className="transaction-metadata">
+                        <div className="metadata-item">
+                          <span className="metadata-label">Created:</span> {formatDate(transaction.created_at)}
+                        </div>
+                        <div className="metadata-item">
+                          <span className="metadata-label">Updated:</span> {formatDate(transaction.updated_at)}
+                        </div>
+                        <div className="metadata-item">
+                          <span className="metadata-label">ID:</span> {transaction.id}
+                        </div>
+                      </div>
+                      
+                      {transaction.flags.length > 0 && (
+                        <>
+                          <h5>Flags</h5>
+                          <ul className="flags-list">
+                            {transaction.flags.map((flag, idx) => (
+                              <li key={idx} className="flag-item">
+                                <strong>{flag.flag_type}</strong>: {flag.message}
+                                {flag.duplicates_transaction && (
+                                  <div className="duplicate-info">
+                                    Duplicates Transaction ID: {flag.duplicates_transaction}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

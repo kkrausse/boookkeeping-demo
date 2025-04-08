@@ -42,31 +42,16 @@
   background-color: #f5f7fa;
 }
 
-.flag-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  padding: 4px;
-  border-radius: 4px;
-}
-
-.flag-button:hover {
-  background-color: rgba(255, 200, 0, 0.1);
-}
-
-.alert-icon {
-  color: #ff9800;
-}
-
 .flag-count {
-  margin-left: 4px;
+  position: absolute;
+  top: -6px;
+  right: -6px;
   background-color: #ff9800;
   color: white;
-  font-size: 12px;
+  font-size: 10px;
   border-radius: 10px;
-  padding: 2px 6px;
+  padding: 1px 5px;
+  font-weight: bold;
 }
 
 .flag-details-row {
@@ -79,11 +64,18 @@
 
 .flag-details h4 {
   margin-top: 0;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
   color: #333;
+  font-size: 1.1rem;
 }
 
-.flag-details ul {
+.flag-details h5 {
+  margin: 16px 0 8px 0;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.flags-list {
   margin: 0;
   padding-left: 20px;
 }
@@ -99,59 +91,89 @@
   font-size: 0.9em;
 }
 
+.transaction-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.metadata-item {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.metadata-label {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
 .action-buttons {
   white-space: nowrap;
 }
 
-.edit-button,
-.delete-button,
-.save-button,
-.cancel-button {
-  padding: 6px 12px;
-  margin-right: 4px;
+.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin-right: 6px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  position: relative;
+  background-color: transparent;
+  color: #555;
+  transition: background-color 0.2s, color 0.2s;
 }
 
-.edit-button {
-  background-color: #4a90e2;
-  color: white;
+.actions-column {
+  width: 120px;
+  text-align: center !important;
 }
 
-.delete-button {
-  background-color: #e74c3c;
-  color: white;
-}
-
-.save-button {
-  background-color: #2ecc71;
-  color: white;
-}
-
-.cancel-button {
-  background-color: #95a5a6;
-  color: white;
+.action-buttons {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .edit-button:hover {
-  background-color: #3a7bc8;
+  background-color: rgba(74, 144, 226, 0.1);
+  color: #4a90e2;
 }
 
 .delete-button:hover {
-  background-color: #d62c1a;
+  background-color: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
+}
+
+.save-button {
+  background-color: rgba(46, 204, 113, 0.1);
+  color: #2ecc71;
+}
+
+.cancel-button {
+  background-color: rgba(149, 165, 166, 0.1);
+  color: #95a5a6;
+}
+
+.info-button {
+  color: #3498db;
+}
+
+.info-button:hover {
+  background-color: rgba(52, 152, 219, 0.1);
 }
 
 .save-button:hover:not(:disabled) {
-  background-color: #27ae60;
+  background-color: rgba(46, 204, 113, 0.2);
 }
 
 .cancel-button:hover:not(:disabled) {
-  background-color: #7f8c8d;
+  background-color: rgba(149, 165, 166, 0.2);
 }
 
 .save-button:disabled,

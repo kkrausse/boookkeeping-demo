@@ -156,3 +156,25 @@ export interface QueryRule {
   quantity_value?: number,
   quantity_compare?: '<' | '>' | '=',
 }
+
+export interface TransactionRule {
+  id?: number;
+  category?: string;
+  flagMessage?: string;
+  createdAt?: string;
+}
+
+export async function createTransactionRule(rule: TransactionRule): Promise<TransactionRule> {
+  // This is a mock implementation - will be replaced with a real API call later
+  console.log('Creating transaction rule:', rule);
+  
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  // Return mock response with ID and timestamp
+  return {
+    ...rule,
+    id: Math.floor(Math.random() * 10000),
+    createdAt: new Date().toISOString()
+  };
+}

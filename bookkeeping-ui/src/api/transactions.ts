@@ -159,22 +159,30 @@ export interface QueryRule {
 
 export interface TransactionRule {
   id?: number;
+  filter_description?: string;
+  filter_amount_value?: string;
+  filter_amount_comparison?: 'above' | 'below' | 'equal' | '';
   category?: string;
-  flagMessage?: string;
-  createdAt?: string;
+  flag_message?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export async function createTransactionRule(rule: TransactionRule): Promise<TransactionRule> {
-  // This is a mock implementation - will be replaced with a real API call later
-  console.log('Creating transaction rule:', rule);
-  
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // Return mock response with ID and timestamp
-  return {
-    ...rule,
-    id: Math.floor(Math.random() * 10000),
-    createdAt: new Date().toISOString()
-  };
+  const response = await api.post('/rules/', rule);
+  return response.data;
+}
+
+export async function fetchTransactionRules(): Promise<{ data: TransactionRule[] }> {
+  const response = await api.get('/rules/');
+  return response;
+}
+
+export async function deleteTransactionRule(id: number): Promise<void> {
+  await api.delete(`/rules/${id}/`);
+}
+
+export async function updateTransactionRule(rule: TransactionRule & { id: number }): Promise<TransactionRule> {
+  const response = await api.put(`/rules/${rule.id}/`, rule);
+  return response.data;
 }

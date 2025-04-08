@@ -112,21 +112,34 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Submit the rule creation
   const handleCreateRule = async () => {
     // Collect rule data
-    const ruleData: TransactionRule = {};
+    const ruleData: TransactionRule = {
+      // Apply the filter criteria from the local filters
+      filter_description: localFilters.description || undefined,
+      filter_amount_value: localFilters.amountValue || undefined,
+      filter_amount_comparison: localFilters.amountComparison || undefined,
+    };
     
+    // Add rule actions from the checked options
     ruleOptions.forEach(option => {
       if (option.checked && option.value) {
         if (option.id === 'category') {
           ruleData.category = option.value;
         } else if (option.id === 'flag') {
-          ruleData.flagMessage = option.value;
+          ruleData.flag_message = option.value;
         }
       }
     });
 
     // Check if we have at least one rule option selected
-    if (!Object.keys(ruleData).length) {
+    if (!ruleData.category && !ruleData.flag_message) {
       alert('Please select at least one rule option and provide a value.');
+      return;
+    }
+    
+    // Check if we have at least one filter criterion
+    if (!ruleData.filter_description && 
+        !(ruleData.filter_amount_value && ruleData.filter_amount_comparison)) {
+      alert('Please provide at least one filter criterion.');
       return;
     }
 
@@ -218,36 +231,83 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           </div>
         </div>
       ) : (
-        // Rule creation controls
         <div className="rule-creation">
           <div className="rule-description">
             <p>Create a rule to automatically categorize or flag transactions:</p>
           </div>
-          <div className="rule-options">
-            {ruleOptions.map(option => (
-              <div key={option.id} className="rule-option">
-                <div className="rule-option-header">
-                  <label className="rule-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={option.checked}
-                      onChange={(e) => handleRuleOptionChange(option.id, e.target.checked)}
-                    />
-                    {option.label}
-                  </label>
-                </div>
-                {option.checked && (
-                  <input
-                    type="text"
-                    value={option.value || ''}
-                    onChange={(e) => handleRuleValueChange(option.id, e.target.value)}
-                    placeholder={option.id === 'category' ? "Enter category name" : "Enter flag message"}
-                    className="rule-input"
-                  />
-                )}
+          
+          <div className="rule-section">
+            <h4>1. Define Filter Criteria</h4>
+            <p className="rule-section-description">Specify which transactions this rule will apply to:</p>
+            <div className="filter-controls">
+              <div className="filter-group">
+                <label htmlFor="description-filter">Description Contains:</label>
+                <input
+                  id="description-filter"
+                  type="text"
+                  value={localFilters.description}
+                  onChange={(e) => handleLocalFilterChange('description', e.target.value)}
+                  placeholder="Enter text to match in description"
+                  className="filter-input"
+                />
               </div>
-            ))}
+              <div className="filter-group">
+                <label htmlFor="amount-filter">Amount:</label>
+                <div className="amount-filter-controls">
+                  <select
+                    value={localFilters.amountComparison}
+                    onChange={(e) => handleLocalFilterChange('amountComparison', e.target.value as AmountComparisonType)}
+                    className="filter-select"
+                  >
+                    <option value="">Select...</option>
+                    <option value="above">Above</option>
+                    <option value="below">Below</option>
+                    <option value="equal">Equal to</option>
+                  </select>
+                  <input
+                    id="amount-filter"
+                    type="number"
+                    value={localFilters.amountValue}
+                    onChange={(e) => handleLocalFilterChange('amountValue', e.target.value)}
+                    placeholder="Enter amount"
+                    className="filter-input"
+                    disabled={!localFilters.amountComparison}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
+          
+          <div className="rule-section">
+            <h4>2. Define Actions to Apply</h4>
+            <p className="rule-section-description">Specify what should happen when a transaction matches:</p>
+            <div className="rule-options">
+              {ruleOptions.map(option => (
+                <div key={option.id} className="rule-option">
+                  <div className="rule-option-header">
+                    <label className="rule-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={option.checked}
+                        onChange={(e) => handleRuleOptionChange(option.id, e.target.checked)}
+                      />
+                      {option.label}
+                    </label>
+                  </div>
+                  {option.checked && (
+                    <input
+                      type="text"
+                      value={option.value || ''}
+                      onChange={(e) => handleRuleValueChange(option.id, e.target.value)}
+                      placeholder={option.id === 'category' ? "Enter category name" : "Enter flag message"}
+                      className="rule-input"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          
           <div className="rule-actions">
             <button 
               className="create-rule-button"

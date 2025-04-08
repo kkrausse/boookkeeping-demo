@@ -21,6 +21,7 @@ from transactions import views
 
 router = routers.DefaultRouter()
 router.register(r'transactions', views.TransactionViewSet)
+router.register(r'rules', views.TransactionRuleViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

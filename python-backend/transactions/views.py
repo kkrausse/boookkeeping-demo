@@ -8,8 +8,8 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from datetime import datetime
 import pytz
-from .models import Transaction, TransactionFlag
-from .serializers import TransactionSerializer, TransactionCSVSerializer
+from .models import Transaction, TransactionFlag, TransactionRule
+from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
 from .utils import create_transaction_with_flags, update_transaction_with_flags
 
 class TransactionFilter(FilterSet):
@@ -152,3 +152,11 @@ class TransactionViewSet(viewsets.ModelViewSet):
             status_code = status.HTTP_400_BAD_REQUEST
             
         return Response(response_data, status=status_code)
+        
+class TransactionRuleViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows transaction rules to be viewed, created, updated or deleted.
+    """
+    queryset = TransactionRule.objects.all().order_by('-created_at')
+    serializer_class = TransactionRuleSerializer
+    pagination_class = StandardResultsSetPagination

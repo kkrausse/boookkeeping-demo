@@ -8,6 +8,7 @@ assume dev servers are already running unless otherwise specified
 - UI: `cd bookkeeping-ui && npm run dev` - Start UI dev server
 - UI: `cd bookkeeping-ui && npm run build` - Build UI for production
 - UI: `cd bookkeeping-ui && npm run lint` - Lint UI code
+- Backend: `cd python-backend && source env/bin/activate` - setup
 - Backend: `cd python-backend && python manage.py runserver` - Start Django server
 - Backend: `cd python-backend && python manage.py test` - Run all tests
 - Backend: `cd python-backend && python manage.py test transactions.tests.TestClassName.test_method_name` - Run single test

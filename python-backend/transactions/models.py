@@ -68,3 +68,50 @@ def create_duplicate_flag(sender, instance, created, **kwargs):
                 'message': f'Possible duplicate of transaction {duplicate.id}'
             }
         )
+        
+class TransactionRule(models.Model):
+    COMPARISON_CHOICES = [
+        ('above', 'Above'),
+        ('below', 'Below'),
+        ('equal', 'Equal'),
+    ]
+    
+    # Filter criteria
+    filter_description = models.TextField(blank=True, null=True, 
+                            help_text="Description substring to match (case insensitive)")
+    filter_amount_value = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True,
+                            help_text="Amount value to compare")
+    filter_amount_comparison = models.CharField(max_length=10, choices=COMPARISON_CHOICES, blank=True, null=True,
+                            help_text="Amount comparison operator")
+    
+    # Actions to apply
+    category = models.TextField(blank=True, null=True,
+                  help_text="Category to set when rule matches")
+    flag_message = models.TextField(blank=True, null=True,
+                     help_text="Flag message to add when rule matches")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['created_at']),
+        ]
+        
+    def __str__(self):
+        parts = []
+        if self.filter_description:
+            parts.append(f"Description contains '{self.filter_description}'")
+        if self.filter_amount_value and self.filter_amount_comparison:
+            parts.append(f"Amount {self.filter_amount_comparison} {self.filter_amount_value}")
+            
+        actions = []
+        if self.category:
+            actions.append(f"set category to '{self.category}'")
+        if self.flag_message:
+            actions.append(f"add flag: '{self.flag_message}'")
+            
+        if parts and actions:
+            return f"Rule: If {' and '.join(parts)}, then {' and '.join(actions)}"
+        return f"Rule #{self.pk}"

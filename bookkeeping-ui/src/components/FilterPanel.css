@@ -129,7 +129,7 @@
 .rule-creation {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .rule-description {
@@ -142,6 +142,26 @@
   margin: 0;
 }
 
+.rule-section {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  background-color: white;
+}
+
+.rule-section h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: #333;
+  font-size: 16px;
+}
+
+.rule-section-description {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 16px;
+}
+
 .rule-options {
   display: flex;
   flex-direction: column;
@@ -152,7 +172,7 @@
   border: 1px solid #e0e0e0;
   border-radius: 6px;
   padding: 12px;
-  background-color: white;
+  background-color: #f9f9f9;
 }
 
 .rule-option-header {
@@ -180,6 +200,7 @@
   border: 1px solid #e0e0e0;
   font-size: 14px;
   transition: border-color 0.2s;
+  background-color: white;
 }
 
 .rule-input:focus {

@@ -173,7 +173,7 @@ export async function createTransactionRule(rule: TransactionRule): Promise<Tran
   return response.data;
 }
 
-export async function fetchTransactionRules(): Promise<{ data: TransactionRule[] }> {
+export async function fetchTransactionRules(): Promise<{ data: PaginatedResponse<TransactionRule> }> {
   const response = await api.get('/rules/');
   return response;
 }

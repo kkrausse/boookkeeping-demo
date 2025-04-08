@@ -154,3 +154,11 @@
   margin-bottom: 1.5rem;
   color: #333;
 }
+
+.rules-info {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 8px 0;
+  text-align: right;
+  padding: 0 8px;
+}

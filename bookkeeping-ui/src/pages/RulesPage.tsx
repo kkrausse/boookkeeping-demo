@@ -10,7 +10,8 @@ import {
   fetchTransactionRules, 
   createTransactionRule,
   updateTransactionRule,
-  deleteTransactionRule
+  deleteTransactionRule,
+  PaginatedResponse
 } from '../api/transactions';
 import { Edit, Trash2, Plus, Loader2 } from 'lucide-react';
 import '../components/TransactionTable.css';
@@ -79,11 +80,13 @@ export function RulesPage() {
   });
   
   // Fetch all rules
-  const { data: rules, isLoading } = useQuery<TransactionRule[]>({
+  const { data, isLoading } = useQuery<PaginatedResponse<TransactionRule>>({
     queryKey: ['rules'],
     queryFn: () => fetchTransactionRules().then(r => r.data),
     placeholderData: keepPreviousData
   });
+  
+  const rules = data?.results || [];
   
   // Create rule mutation
   const createMutation = useMutation({
@@ -206,6 +209,8 @@ export function RulesPage() {
   
   const isPending = createMutation.isPending || updateMutation.isPending;
   
+  const totalRules = data?.count || 0;
+
   return (
     <div className="page-container">
       <h1>Transaction Rules</h1>
@@ -215,6 +220,8 @@ export function RulesPage() {
           {notification.message}
         </div>
       )}
+      
+      <div className="rules-info">Total Rules: {totalRules}</div>
       
       <div className="table-header">
         <h2>Rules</h2>
@@ -351,7 +358,7 @@ export function RulesPage() {
                   </div>
                 </td>
               </tr>
-            ) : rules && rules.length > 0 ? (
+            ) : rules.length > 0 ? (
               rules.map(rule => (
                 <tr key={rule.id}>
                   <td>

@@ -29,6 +29,7 @@ interface TransactionTableProps {
     editableFields?: Array<keyof Transaction>;
     filters: FilterParams;
     onFilterChange: (filters: FilterParams) => void;
+    csvUploadButton?: React.ReactNode; // Additional prop for CSV upload button
   }
 }
 
@@ -46,7 +47,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     onDeleteTransaction,
     editableFields = ['description', 'category', 'amount', 'datetime'],
     filters,
-    onFilterChange
+    onFilterChange,
+    csvUploadButton
   } = tableProps;
 
   const queryClient = useQueryClient();
@@ -156,6 +158,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
             <span>Filter</span>
             {isFiltersActive() && <span className="filter-badge" />}
           </button>
+          {csvUploadButton}
           <button 
             className="add-button"
             onClick={() => setShowNewTransactionRow(!showNewTransactionRow)}

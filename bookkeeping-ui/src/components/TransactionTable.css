@@ -75,6 +75,31 @@
   border-color: #4a90e2;
 }
 
+/* Integrate the CSV upload button styling */
+.csv-upload-button {
+  background-color: #5a6268;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  min-width: 120px;
+  transition: background-color 0.2s;
+}
+
+.csv-upload-button:hover {
+  background-color: #4a5258;
+}
+
+.csv-upload-button .spinner-icon {
+  animation: spin 1s linear infinite;
+}
+
 .filter-badge {
   position: absolute;
   top: -5px;

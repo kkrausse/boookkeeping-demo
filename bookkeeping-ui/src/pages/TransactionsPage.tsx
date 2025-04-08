@@ -6,6 +6,8 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import { Loader2 } from 'lucide-react'
+import './TransactionsPage.css'
 import { 
   Transaction, 
   fetchTransactions, 
@@ -24,12 +26,15 @@ import { TransactionTable } from '../components/TransactionTable';
 
 interface CsvUploadProps {
   className?: string;
+  buttonOnly?: boolean;
+  showNotification?: (type: 'success' | 'error', message: string) => void;
 }
 
-function CsvUpload({ className }: CsvUploadProps) {
+function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) {
   const queryClient = useQueryClient();
   const [uploadResult, setUploadResult] = useState<UploadCSVResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   
   const { mutate: fileMutate } = useMutation<UploadCSVResponse, Error, File>({
     mutationFn: uploadCSV,
@@ -37,6 +42,16 @@ function CsvUpload({ className }: CsvUploadProps) {
       queryClient.invalidateQueries({queryKey: ['transactions']});
       setUploadResult(data);
       setIsUploading(false);
+      setShowResults(true);
+      
+      // If we have showNotification, use it for feedback
+      if (showNotification) {
+        if (data.created_count > 0) {
+          showNotification('success', `Successfully imported ${data.created_count} transactions`);
+        } else if (data.errors && data.errors.length > 0) {
+          showNotification('error', 'Error uploading file. See details in results panel.');
+        }
+      }
     },
     onError: (err) => {
       console.error('Upload failed:', err);
@@ -46,6 +61,11 @@ function CsvUpload({ className }: CsvUploadProps) {
         created_count: 0,
         errors: [`Upload failed: ${err.message}`]
       });
+      setShowResults(true);
+      
+      if (showNotification) {
+        showNotification('error', `Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
     },
   });
 
@@ -53,14 +73,42 @@ function CsvUpload({ className }: CsvUploadProps) {
     if (event.target.files && event.target.files[0]) {
       setIsUploading(true);
       setUploadResult(null);
+      setShowResults(false);
       fileMutate(event.target.files[0]);
     }
   };
 
   const clearResults = () => {
     setUploadResult(null);
+    setShowResults(false);
   };
 
+  // Just the button for use in the table header
+  if (buttonOnly) {
+    return (
+      <label className="csv-upload-button">
+        {isUploading ? (
+          <>
+            <Loader2 className="spinner-icon" size={16} />
+            <span>Uploading...</span>
+          </>
+        ) : (
+          <>
+            <span>Import CSV</span>
+          </>
+        )}
+        <input 
+          type="file" 
+          accept=".csv" 
+          onChange={handleFileChange} 
+          disabled={isUploading} 
+          style={{ display: 'none' }}
+        />
+      </label>
+    );
+  }
+
+  // Full component with results panel
   return (
     <div className={`csv-upload-container ${className || ''}`}>
       <div className="csv-upload-header">
@@ -77,7 +125,7 @@ function CsvUpload({ className }: CsvUploadProps) {
         </label>
       </div>
       
-      {uploadResult && (
+      {showResults && uploadResult && (
         <div className="upload-results">
           <div className="upload-results-header">
             <h4>Upload Results</h4>
@@ -209,10 +257,94 @@ export function TransactionsPage() {
   const totalCount = data?.count || 0;
   const hasNextPage = !!data?.next;
 
+  // State for notifications
+  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  
+  // Create a notification function for CSV upload and other actions
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    
+    // Clear notification after 3 seconds
+    setTimeout(() => {
+      setNotification(null);
+    }, 3000);
+  };
+
+  // Results panel for CSV upload
+  const [showCsvResults, setShowCsvResults] = useState(false);
+  const [csvUploadResult, setCsvUploadResult] = useState<UploadCSVResponse | null>(null);
+  
+  const handleCsvResult = (result: UploadCSVResponse | null) => {
+    setCsvUploadResult(result);
+    if (result) {
+      setShowCsvResults(true);
+      
+      // Show a notification based on result
+      if (result.created_count > 0) {
+        showNotification('success', `Successfully imported ${result.created_count} transactions`);
+      } else if (result.errors && result.errors.length > 0) {
+        showNotification('error', 'Error uploading CSV. Check the results panel for details.');
+      }
+    }
+  };
+
   return (
     <div className="page-container">
       <h1>Transactions</h1>
-      <CsvUpload className="page-section" />
+      
+      {/* Notification tooltip */}
+      {notification && (
+        <div className={`notification ${notification.type}`}>
+          {notification.message}
+        </div>
+      )}
+      
+      {/* Show CSV results panel if needed */}
+      {showCsvResults && csvUploadResult && (
+        <div className="csv-results-panel page-section">
+          <div className="upload-results">
+            <div className="upload-results-header">
+              <h4>Upload Results</h4>
+              <button onClick={() => setShowCsvResults(false)} className="close-button">×</button>
+            </div>
+            
+            {csvUploadResult.created_count > 0 && (
+              <div className="upload-success">
+                Successfully imported {csvUploadResult.created_count} transactions
+              </div>
+            )}
+            
+            {csvUploadResult.error && (
+              <div className="upload-error-message">
+                {csvUploadResult.error}
+              </div>
+            )}
+            
+            {csvUploadResult.errors && csvUploadResult.errors.length > 0 && (
+              <div className="upload-errors">
+                <h5>Errors ({csvUploadResult.errors.length})</h5>
+                <ul className="error-list">
+                  {csvUploadResult.errors.map((error, index) => (
+                    <li key={`error-${index}`} className="error-item">{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {csvUploadResult.warnings && csvUploadResult.warnings.length > 0 && (
+              <div className="upload-warnings">
+                <h5>Warnings ({csvUploadResult.warnings.length})</h5>
+                <ul className="warning-list">
+                  {csvUploadResult.warnings.map((warning, index) => (
+                    <li key={`warning-${index}`} className="warning-item">{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
       <div className="transactions-info">Total: {totalCount}</div>
       <TransactionTable tableProps={({
         transactions: transactions,
@@ -227,6 +359,7 @@ export function TransactionsPage() {
         onDeleteTransaction: handleDeleteTransaction,
         filters: filters,
         onFilterChange: handleFilterChange,
+        csvUploadButton: <CsvUpload buttonOnly showNotification={showNotification} />
       })}/>
     </div>
   );

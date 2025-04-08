@@ -129,13 +129,21 @@ function TransactionsPage() {
   const queryClient = useQueryClient();
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [currentSort, setCurrentSort] = useState<TransactionSort>({ column: 'datetime', order: 'desc' });
+  const [filters, setFilters] = useState<FilterParams>({
+    description: '',
+    amountValue: '',
+    amountComparison: ''
+  });
   const pageSize = 10; // Match the default in the backend
 
   // Create query parameters object
   const queryParams: FetchTransactionsParams = {
     page: currentPage,
     pageSize: pageSize,
-    sort: currentSort
+    sort: currentSort,
+    filters: filters.description || (filters.amountValue && filters.amountComparison) 
+      ? filters 
+      : undefined
   };
 
   // Fetch transactions with pagination
@@ -189,6 +197,13 @@ function TransactionsPage() {
     // Reset to first page when sorting changes
     setCurrentPage(1);
   };
+  
+  // Handle filter changes
+  const handleFilterChange = (newFilters: FilterParams) => {
+    setFilters(newFilters);
+    // Reset to first page when filters change
+    setCurrentPage(1);
+  };
 
   if (isLoading && !data) return <div>Loading transactions...</div>;
   if (error) return <div>Error: {error.message}</div>;
@@ -210,8 +225,11 @@ function TransactionsPage() {
         onPageBack: handlePageBack,
         currentPage: currentPage,
         hasNextPage: hasNextPage,
+        isLoading: isLoading,
         onCreateTransaction: handleCreateTransaction,
         onDeleteTransaction: handleDeleteTransaction,
+        filters: filters,
+        onFilterChange: handleFilterChange,
       })}/>
     </>
   )

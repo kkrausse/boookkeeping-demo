@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status, parsers, pagination, filters
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from django_filters.rest_framework import DjangoFilterBackend, FilterSet, CharFilter, NumberFilter
 import csv
 from io import TextIOWrapper
 from decimal import Decimal, InvalidOperation
@@ -10,6 +11,15 @@ import pytz
 from .models import Transaction, TransactionFlag
 from .serializers import TransactionSerializer, TransactionCSVSerializer
 from .utils import create_transaction_with_flags, update_transaction_with_flags
+
+class TransactionFilter(FilterSet):
+    description__icontains = CharFilter(field_name='description', lookup_expr='icontains')
+    amount__gt = NumberFilter(field_name='amount', lookup_expr='gt')
+    amount__lt = NumberFilter(field_name='amount', lookup_expr='lt')
+    
+    class Meta:
+        model = Transaction
+        fields = ['description', 'category', 'amount', 'datetime']
 
 class StandardResultsSetPagination(pagination.PageNumberPagination):
     page_size = 10
@@ -22,7 +32,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     
     # Enable filtering and ordering
-    filter_backends = [filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = TransactionFilter
     ordering_fields = ['description', 'category', 'amount', 'datetime', 'created_at', 'updated_at']
     ordering = ['-created_at']  # Default ordering
     

@@ -61,14 +61,21 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
+export interface FilterParams {
+  description?: string;
+  amountValue?: string;
+  amountComparison?: 'above' | 'below' | 'equal' | '';
+}
+
 export interface FetchTransactionsParams {
   page?: number;
   pageSize?: number;
   sort?: TransactionSort;
+  filters?: FilterParams;
 }
 
 export async function fetchTransactions(params: FetchTransactionsParams = {}): Promise<{ data: PaginatedResponse<Transaction> }> {
-  const { page = 1, pageSize = 10, sort } = params;
+  const { page = 1, pageSize = 10, sort, filters } = params;
   
   // Build query parameters
   const queryParams = new URLSearchParams();
@@ -82,6 +89,31 @@ export async function fetchTransactions(params: FetchTransactionsParams = {}): P
   if (sort) {
     const ordering = `${sort.order === 'desc' ? '-' : ''}${sort.column}`;
     queryParams.append('ordering', ordering);
+  }
+  
+  // Add filters if provided
+  if (filters) {
+    // Description filter (case insensitive)
+    if (filters.description) {
+      queryParams.append('description__icontains', filters.description);
+    }
+    
+    // Amount comparison filter
+    if (filters.amountValue && filters.amountComparison) {
+      const amountValue = filters.amountValue;
+      
+      switch (filters.amountComparison) {
+        case 'above':
+          queryParams.append('amount__gt', amountValue);
+          break;
+        case 'below':
+          queryParams.append('amount__lt', amountValue);
+          break;
+        case 'equal':
+          queryParams.append('amount', amountValue);
+          break;
+      }
+    }
   }
   
   const url = `/transactions/?${queryParams.toString()}`;

@@ -118,7 +118,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         <h2>Transactions</h2>
         <div className="table-actions">
           <button 
-            className="icon-button add-button"
+            className="add-button"
             onClick={() => setShowNewTransactionRow(!showNewTransactionRow)}
             title={showNewTransactionRow ? "Cancel" : "Add new transaction"}
           >

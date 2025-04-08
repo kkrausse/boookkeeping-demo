@@ -31,14 +31,16 @@
 .add-button {
   background-color: #4a90e2;
   color: white;
-  padding: 6px 12px;
+  padding: 8px 16px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 14px;
+  font-weight: 500;
   border: none;
   cursor: pointer;
+  width: 100%;
   transition: background-color 0.2s;
 }
 

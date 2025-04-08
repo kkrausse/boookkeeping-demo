@@ -34,7 +34,7 @@
 
   /* Spacing */
   --spacing-xs: 4px;
-  --spacing-sm: 8px;
+  --spacing-sm: 6px;
   --spacing-md: 16px;
   --spacing-lg: 24px;
   --spacing-xl: 32px;
@@ -104,7 +104,7 @@ p {
 button {
   cursor: pointer;
   font-size: var(--font-size-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
   border-radius: var(--border-radius);
   font-weight: var(--font-weight-medium);
   transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);

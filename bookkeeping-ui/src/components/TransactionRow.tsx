@@ -292,7 +292,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
       
       {/* Details / Flags Row */}
       {expandedDetails && transaction && (
-        <tr className="flag-details-row">
+        <tr className={`flag-details-row ${transaction.flags && transaction.flags.length > 0 ? 'has-flags' : ''}`}>
           <td colSpan={5}>
             <div className="flag-details">
               <h4>Transaction Details</h4>

@@ -26,4 +26,5 @@ description,category,amount,timestamp
 "Fast food","Food","17.50","2025-04-07 22:22:22"
 "????","???",???,"???"
 "","",null,""
+"","food",23,""
 "Surprise gift","Misc",100.00,"2025-04-08 01:00:00"

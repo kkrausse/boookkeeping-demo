@@ -134,10 +134,26 @@ def validate_transaction_data(data):
     cleaned_data = {}
     
     # Process description
-    cleaned_data['description'] = data.get('description', '').strip()
+    description = data.get('description', '').strip()
+    cleaned_data['description'] = description
+    
+    # Flag blank descriptions
+    if not description:
+        flags.append({
+            'flag_type': 'MISSING_DATA',
+            'message': "Missing or blank description"
+        })
     
     # Process category
-    cleaned_data['category'] = data.get('category', '').strip()
+    category = data.get('category', '').strip()
+    cleaned_data['category'] = category
+    
+    # Flag missing categories
+    if not category:
+        flags.append({
+            'flag_type': 'MISSING_DATA',
+            'message': "Missing category"
+        })
     
     # Process amount
     amount_str = data.get('amount', '')
@@ -162,8 +178,8 @@ def validate_transaction_data(data):
             flags.append(date_flag)
     
     # Validate that we have at least some valid data
-    if not cleaned_data['description'] and cleaned_data['amount'] is None:
-        raise ValueError("Both description and amount are missing or invalid")
+    if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
+        raise ValueError("Transaction must have at least a description, category, or valid amount")
     
     return cleaned_data, flags
 
@@ -212,10 +228,10 @@ def update_transaction_with_flags(transaction, data):
     # Validate and clean data
     cleaned_data, flags = validate_transaction_data(data)
     
-    # Clear existing parse error flags
+    # Clear existing parse error and missing data flags
     TransactionFlag.objects.filter(
         transaction=transaction,
-        flag_type='PARSE_ERROR'
+        flag_type__in=['PARSE_ERROR', 'MISSING_DATA']
     ).delete()
     
     # Update transaction

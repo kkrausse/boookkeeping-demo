@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FilterParams, TransactionRule, createTransactionRule } from '../api/transactions';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Check, Save, Loader2 } from 'lucide-react';
 import './FilterPanel.css';
 
@@ -10,6 +11,7 @@ type FilterPanelProps = {
   onFilterChange: (filters: FilterParams) => void;
   isFiltersActive: boolean;
   clearFilters: () => void;
+  showNotification: (type: 'success' | 'error', message: string) => void;
 };
 
 // Define a type for rule options
@@ -31,7 +33,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   onFilterChange,
   isFiltersActive,
   clearFilters,
+  showNotification,
 }) => {
+  const queryClient = useQueryClient();
   const [localFilters, setLocalFilters] = useState<FilterParams>({
     description: filters.description || '',
     amountValue: filters.amountValue || '',
@@ -40,7 +44,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
   // Rule creation state
   const [isAddingRule, setIsAddingRule] = useState(false);
-  const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [ruleOptions, setRuleOptions] = useState<RuleOption[]>([
     { id: 'category', label: 'Add Category', checked: false, value: '' },
     { id: 'flag', label: 'Add Flag', checked: false, value: '' }
@@ -109,8 +112,31 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     );
   };
 
+  // Create rule mutation
+  const createRuleMutation = useMutation({
+    mutationFn: createTransactionRule,
+    onSuccess: (data) => {
+      // Show success notification
+      showNotification('success', `Rule created successfully`);
+      
+      // Reset rule creation state
+      setIsAddingRule(false);
+      setRuleOptions([
+        { id: 'category', label: 'Add Category', checked: false, value: '' },
+        { id: 'flag', label: 'Add Flag', checked: false, value: '' }
+      ]);
+      
+      // Invalidate rules queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+    },
+    onError: (error) => {
+      // Show error notification
+      showNotification('error', error instanceof Error ? error.message : 'Failed to create rule');
+    }
+  });
+
   // Submit the rule creation
-  const handleCreateRule = async () => {
+  const handleCreateRule = () => {
     // Collect rule data
     const ruleData: TransactionRule = {
       // Apply the filter criteria from the local filters
@@ -132,39 +158,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     // Check if we have at least one rule option selected
     if (!ruleData.category && !ruleData.flag_message) {
-      alert('Please select at least one rule option and provide a value.');
+      showNotification('error', 'Please select at least one rule action (category or flag)');
       return;
     }
     
     // Check if we have at least one filter criterion
     if (!ruleData.filter_description && 
         !(ruleData.filter_amount_value && ruleData.filter_amount_comparison)) {
-      alert('Please provide at least one filter criterion.');
+      showNotification('error', 'Please provide at least one filter criterion');
       return;
     }
 
-    try {
-      setIsCreatingRule(true);
-      
-      // Call the API to create the rule
-      const createdRule = await createTransactionRule(ruleData);
-      console.log('Rule created successfully:', createdRule);
-      
-      // Show success message
-      alert(`Rule created successfully with ID: ${createdRule.id}`);
-      
-      // Reset rule creation state
-      setIsAddingRule(false);
-      setRuleOptions([
-        { id: 'category', label: 'Add Category', checked: false, value: '' },
-        { id: 'flag', label: 'Add Flag', checked: false, value: '' }
-      ]);
-    } catch (error) {
-      console.error('Error creating rule:', error);
-      alert('Failed to create rule. Please try again.');
-    } finally {
-      setIsCreatingRule(false);
-    }
+    // Execute the mutation
+    createRuleMutation.mutate(ruleData);
   };
 
   return (
@@ -312,9 +318,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             <button 
               className="create-rule-button"
               onClick={handleCreateRule}
-              disabled={isCreatingRule || !ruleOptions.some(option => option.checked && option.value)}
+              disabled={createRuleMutation.isPending || !ruleOptions.some(option => option.checked && option.value)}
             >
-              {isCreatingRule ? (
+              {createRuleMutation.isPending ? (
                 <>
                   <Loader2 className="spinner-icon" size={16} />
                   Creating...

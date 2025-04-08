@@ -174,6 +174,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
           onFilterChange={onFilterChange}
           isFiltersActive={isFiltersActive()}
           clearFilters={clearFilters}
+          showNotification={showNotification}
         />
       )}
 

@@ -5,7 +5,7 @@ from django.dispatch import receiver
 class Transaction(models.Model):
     description = models.TextField(blank=True)
     category = models.TextField(blank=True)
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     datetime = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -49,16 +49,16 @@ def check_duplicates(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Transaction)
 def create_duplicate_flag(sender, instance, created, **kwargs):
-    if Transaction.objects.filter(
-        description=instance.description,
-        category=instance.category,
-        amount=instance.amount
-    ).exclude(pk=instance.pk).exists():
-        duplicate = Transaction.objects.filter(
-            description=instance.description,
-            category=instance.category,
-            amount=instance.amount
-        ).exclude(pk=instance.pk).first()
+    # Create a filter dictionary with non-null values
+    filter_dict = {'description': instance.description, 'category': instance.category}
+    
+    # Only add amount to the filter if it's not None
+    if instance.amount is not None:
+        filter_dict['amount'] = instance.amount
+    
+    # Check for duplicates
+    if Transaction.objects.filter(**filter_dict).exclude(pk=instance.pk).exists():
+        duplicate = Transaction.objects.filter(**filter_dict).exclude(pk=instance.pk).first()
 
         TransactionFlag.objects.update_or_create(
             transaction=instance,

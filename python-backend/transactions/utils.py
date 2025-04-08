@@ -6,23 +6,26 @@ from django.utils import timezone
 def parse_amount(amount_str):
     """
     Parse an amount string into a Decimal, handling errors gracefully.
+    Returns None for empty/missing values with a flag.
     
     Args:
         amount_str: String representation of an amount
         
     Returns:
-        tuple: (Decimal amount, flag dict or None)
+        tuple: (Decimal amount or None, flag dict or None)
     """
     try:
-        if amount_str and amount_str.strip():
-            return Decimal(amount_str), None
-        else:
-            return Decimal('0.00'), {
+        # Check for empty/None values
+        if amount_str is None or (isinstance(amount_str, str) and not amount_str.strip()):
+            return None, {
                 'flag_type': 'PARSE_ERROR',
                 'message': "Missing or invalid amount value"
             }
-    except (ValueError, InvalidOperation):
-        return Decimal('0.00'), {
+        # Try to parse the amount
+        return Decimal(amount_str), None
+    except (ValueError, InvalidOperation, TypeError):
+        # For parsing errors, return None with flag
+        return None, {
             'flag_type': 'PARSE_ERROR',
             'message': f"Could not parse amount: '{amount_str}'"
         }
@@ -159,7 +162,7 @@ def validate_transaction_data(data):
             flags.append(date_flag)
     
     # Validate that we have at least some valid data
-    if not cleaned_data['description'] and cleaned_data['amount'] == Decimal('0.00'):
+    if not cleaned_data['description'] and cleaned_data['amount'] is None:
         raise ValueError("Both description and amount are missing or invalid")
     
     return cleaned_data, flags

@@ -29,7 +29,7 @@ def parse_amount(amount_str):
 
 def parse_datetime(date_str):
     """
-    Parse a datetime string, trying multiple formats.
+    Parse a datetime string, trying multiple formats including ISO format.
     
     Args:
         date_str: String representation of a date/time
@@ -39,14 +39,51 @@ def parse_datetime(date_str):
     """
     if not date_str or not date_str.strip():
         return timezone.now(), None
-        
+    
+    # Special handling for ISO format with Z (Zulu/UTC time)
+    if 'T' in date_str and date_str.endswith('Z'):
+        try:
+            # Replace Z with +00:00 for UTC timezone
+            iso_date_str = date_str.replace('Z', '+00:00')
+            if '.' in iso_date_str:
+                # With microseconds: 2023-01-01T14:30:00.123456+00:00
+                dt = datetime.strptime(iso_date_str, '%Y-%m-%dT%H:%M:%S.%f%z')
+            else:
+                # Without microseconds: 2023-01-01T14:30:00+00:00
+                dt = datetime.strptime(iso_date_str, '%Y-%m-%dT%H:%M:%S%z')
+            return dt, None
+        except ValueError:
+            pass
+    
+    # For other ISO formats with T separator
+    if 'T' in date_str:
+        try:
+            # Try parsing with different ISO variations
+            formats = [
+                '%Y-%m-%dT%H:%M:%S.%f',  # 2023-01-01T14:30:00.123456
+                '%Y-%m-%dT%H:%M:%S',     # 2023-01-01T14:30:00
+            ]
+            
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    if timezone.is_naive(dt):
+                        dt = timezone.make_aware(dt)
+                    return dt, None
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+    
+    # For common formats
     formats = [
-        '%Y-%m-%d %H:%M:%S',  # 2023-01-01 14:30:00
-        '%Y-%m-%d',           # 2023-01-01
-        '%m/%d/%Y %H:%M:%S',  # 01/01/2023 14:30:00
-        '%m/%d/%Y',           # 01/01/2023
-        '%d/%m/%Y',           # 31/12/2023
-        '%b %d %Y',           # Jan 01 2023
+        '%Y-%m-%d %H:%M:%S.%f',  # 2023-01-01 14:30:00.123456
+        '%Y-%m-%d %H:%M:%S',     # 2023-01-01 14:30:00
+        '%Y-%m-%d',              # 2023-01-01
+        '%m/%d/%Y %H:%M:%S',     # 01/01/2023 14:30:00
+        '%m/%d/%Y',              # 01/01/2023
+        '%d/%m/%Y',              # 31/12/2023
+        '%b %d %Y',              # Jan 01 2023
     ]
     
     for fmt in formats:
@@ -59,7 +96,22 @@ def parse_datetime(date_str):
         except ValueError:
             continue
     
-    # If we reached here, no format matched
+    # If we reached here, no format matched, try one last approach with dateutil if available
+    try:
+        # Try with dateutil parser which handles many formats automatically
+        from dateutil import parser
+        try:
+            dt = parser.parse(date_str)
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt)
+            return dt, None
+        except Exception:
+            pass
+    except ImportError:
+        # dateutil not available, continue
+        pass
+    
+    # Could not parse the date with any method
     return timezone.now(), {
         'flag_type': 'PARSE_ERROR',
         'message': f"Could not parse date: '{date_str}'"

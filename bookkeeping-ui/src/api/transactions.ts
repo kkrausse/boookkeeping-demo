@@ -32,13 +32,44 @@ export async function updateTransaction(transaction: Partial<Transaction> & { id
   return response.data;
 }
 
-export async function fetchTransactions(): Promise<{ data: Transaction[] }> {
-  let r = await api.get('/transactions/');
-  return r
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export interface FetchTransactionsParams {
+  page?: number;
+  pageSize?: number;
+  sort?: TransactionSort;
+}
+
+export async function fetchTransactions(params: FetchTransactionsParams = {}): Promise<{ data: PaginatedResponse<Transaction> }> {
+  const { page = 1, pageSize = 10, sort } = params;
+  
+  // Build query parameters
+  const queryParams = new URLSearchParams();
+  queryParams.append('page', page.toString());
+  
+  if (pageSize) {
+    queryParams.append('page_size', pageSize.toString());
+  }
+  
+  // Add sorting if provided
+  if (sort) {
+    const ordering = `${sort.order === 'desc' ? '-' : ''}${sort.column}`;
+    queryParams.append('ordering', ordering);
+  }
+  
+  const url = `/transactions/?${queryParams.toString()}`;
+  let response = await api.get(url);
+  return response;
 }
 
 export const TRANSACTION_KEYS = {
-  all: ['all-transactions']
+  all: ['all-transactions'],
+  paginated: (params: FetchTransactionsParams) => ['transactions', 'paginated', params]
 }
 
 
@@ -62,7 +93,7 @@ export interface TransactionFlag {
 export type TransactionSortColumn = 'description' | 'amount' | 'datetime' | 'created_at' | 'updated_at';
 
 export interface TransactionSort {
-  column: SortColumn
+  column: TransactionSortColumn
   order: 'asc' | 'desc'
 }
 

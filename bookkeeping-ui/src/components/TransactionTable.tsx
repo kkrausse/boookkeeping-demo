@@ -230,16 +230,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                   ) : (
                     <>
                       <button
-                        className="icon-button info-button"
-                        onClick={() => toggleFlag(transaction.id)}
-                        title="Transaction details"
-                      >
-                        <Info size={18} />
-                        {transaction.flags.length > 0 && (
-                          <span className="flag-count">{transaction.flags.length}</span>
-                        )}
-                      </button>
-                      <button
                         className="icon-button edit-button"
                         onClick={() => handleEdit(transaction)}
                         title="Edit transaction"
@@ -256,6 +246,16 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                           <Loader2 className="spinner-icon" size={18} />
                         ) : (
                           <Trash2 size={18} />
+                        )}
+                      </button>
+                      <button
+                        className="icon-button info-button"
+                        onClick={() => toggleFlag(transaction.id)}
+                        title="Transaction details"
+                      >
+                        <Info size={18} />
+                        {transaction.flags.length > 0 && (
+                          <span className="flag-count">{transaction.flags.length}</span>
                         )}
                       </button>
                     </>

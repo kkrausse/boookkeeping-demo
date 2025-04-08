@@ -15,12 +15,14 @@ import { TransactionTable, TransactionTableProps } from './components/Transactio
 import { 
   Transaction, 
   fetchTransactions, 
-  deleteTransaction, 
+  deleteTransaction,
+  createTransaction,
   uploadCSV, 
   TRANSACTION_KEYS,
   TransactionSort,
   PaginatedResponse,
-  FetchTransactionsParams
+  FetchTransactionsParams,
+  UploadCSVResponse
 } from './api/transactions';
 
 
@@ -142,17 +144,17 @@ function TransactionsPage() {
     queryFn: () => fetchTransactions(queryParams).then(r => r.data),
     placeholderData: keepPreviousData
   });
-
-  // Delete mutation
-  const { mutate: deleteMutate } = useMutation<void, Error, { transaction_id: number }>({
-    mutationFn: deleteTransaction,
-    onSuccess: () => {
-      queryClient.invalidateQueries({queryKey: ['transactions']});
-    },
-    onError: (err) => {
-      console.error('Delete failed:', err);
-    },
-  });
+  
+  // Create a new transaction
+  const handleCreateTransaction = async (newTransaction: Partial<Transaction>) => {
+    return createTransaction(newTransaction);
+  };
+  
+  // Delete a transaction
+  const handleDeleteTransaction = async (id: number) => {
+    await deleteTransaction(id);
+    return id;
+  };
 
   // Handle pagination
   const handlePageForward = () => {
@@ -199,10 +201,7 @@ function TransactionsPage() {
   return (
     <>
       <CsvUpload />
-      <div className="transactions-header">
-        <h2>Transactions</h2>
-        <div className="transactions-info">Total: {totalCount}</div>
-      </div>
+      <div className="transactions-info">Total: {totalCount}</div>
       <TransactionTable tableProps={({
         transactions: transactions,
         currentSort: currentSort,
@@ -211,6 +210,8 @@ function TransactionsPage() {
         onPageBack: handlePageBack,
         currentPage: currentPage,
         hasNextPage: hasNextPage,
+        onCreateTransaction: handleCreateTransaction,
+        onDeleteTransaction: handleDeleteTransaction,
       })}/>
     </>
   )

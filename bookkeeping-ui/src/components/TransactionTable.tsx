@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Transaction, TransactionSort, TransactionSortColumn, TRANSACTION_KEYS, updateTransaction } from '../api/transactions';
-import { AlertTriangle, Check, X, Loader2, Edit, Trash2, Info } from 'lucide-react';
+import { Transaction, TransactionSort, TransactionSortColumn, TRANSACTION_KEYS } from '../api/transactions';
+import { Plus } from 'lucide-react';
+import { TransactionRow } from './TransactionRow';
 import './TransactionTable.css';
 
 interface TransactionTableProps {
@@ -13,6 +14,8 @@ interface TransactionTableProps {
     onPageBack: () => void;
     currentPage: number;
     hasNextPage: boolean;
+    onCreateTransaction?: (transaction: Partial<Transaction>) => Promise<any>;
+    onDeleteTransaction?: (id: number) => Promise<any>;
     editableFields?: Array<keyof Transaction>;
   }
 }
@@ -26,176 +29,71 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     onPageBack,
     currentPage,
     hasNextPage,
-    editableFields = ['description', 'category', 'amount']
+    onCreateTransaction,
+    onDeleteTransaction,
+    editableFields = ['description', 'category', 'amount', 'datetime']
   } = tableProps;
 
   const queryClient = useQueryClient();
-  const [expandedFlags, setExpandedFlags] = useState<Record<number, boolean>>({});
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editedValues, setEditedValues] = useState<Partial<Transaction>>({});
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  const [showNewTransactionRow, setShowNewTransactionRow] = useState<boolean>(false);
 
-  // Update transaction mutation
-  const updateMutation = useMutation({
-    mutationFn: (updatedTransaction: Partial<Transaction> & { id: number }) => {
-      return updateTransaction(updatedTransaction);
-    },
-    // Use optimistic update
-    onMutate: async (newTransaction) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: [TRANSACTION_KEYS.all] });
-      
-      // Snapshot the previous value
-      const previousTransactions = queryClient.getQueryData<Transaction[]>([TRANSACTION_KEYS.all]);
-      
-      // Optimistically update the cache
-      if (previousTransactions) {
-        queryClient.setQueryData<any>([TRANSACTION_KEYS.all], (old: any) => {
-          // If the data structure is paginated
-          if (old?.results) {
-            return {
-              ...old,
-              results: old.results.map((transaction: Transaction) => 
-                transaction.id === newTransaction.id 
-                  ? { ...transaction, ...newTransaction } 
-                  : transaction
-              )
-            };
-          }
-          // If it's a simple array
-          return old.map((transaction: Transaction) => 
-            transaction.id === newTransaction.id 
-              ? { ...transaction, ...newTransaction } 
-              : transaction
-          );
-        });
-      }
-      
-      // Return context with the snapshotted value
-      return { previousTransactions };
-    },
-    onSuccess: () => {
-      // Show success notification
-      setNotification({ 
-        type: 'success', 
-        message: 'Transaction updated successfully' 
-      });
-      
-      // Clear notification after 3 seconds
-      setTimeout(() => {
-        setNotification(null);
-      }, 3000);
-      
-      // Reset editing state
-      setEditingId(null);
-      setEditedValues({});
-      
-      // Refresh data to ensure consistency
-      queryClient.invalidateQueries({ queryKey: [TRANSACTION_KEYS.all] });
-    },
-    onError: (error, variables, context) => {
-      // Show error notification
-      setNotification({ 
-        type: 'error', 
-        message: error instanceof Error ? error.message : 'Failed to update transaction' 
-      });
-      
-      // Revert to the snapshot if available
-      if (context?.previousTransactions) {
-        queryClient.setQueryData([TRANSACTION_KEYS.all], context.previousTransactions);
-      }
-    }
-  });
-
-  // Delete transaction mutation
+  // Delete transaction mutation - simplified
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      // Simulate API call with 1 second delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Deleting transaction:', id);
-      return id;
-    },
-    // Use optimistic update
-    onMutate: async (transactionId) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: [TRANSACTION_KEYS.all] });
-      
-      // Snapshot the previous value
-      const previousTransactions = queryClient.getQueryData<any>([TRANSACTION_KEYS.all]);
-      
-      // Optimistically update the cache
-      if (previousTransactions) {
-        queryClient.setQueryData<any>([TRANSACTION_KEYS.all], (old: any) => {
-          // If the data structure is paginated
-          if (old?.results) {
-            return {
-              ...old,
-              results: old.results.filter((transaction: Transaction) => transaction.id !== transactionId)
-            };
-          }
-          // If it's a simple array
-          return old.filter((transaction: Transaction) => transaction.id !== transactionId);
-        });
+      if (onDeleteTransaction) {
+        return onDeleteTransaction(id);
       }
-      
-      // Return context with the snapshotted value
-      return { previousTransactions };
+      // Use the API function if no custom handler is provided
+      const { deleteTransaction } = await import('../api/transactions');
+      return deleteTransaction(id);
     },
     onSuccess: () => {
-      // Show success notification
-      setNotification({ 
-        type: 'success', 
-        message: 'Transaction deleted successfully' 
-      });
-      
-      // Clear notification after 3 seconds
-      setTimeout(() => {
-        setNotification(null);
-      }, 3000);
-      
-      // Refresh data to ensure consistency
-      queryClient.invalidateQueries({ queryKey: [TRANSACTION_KEYS.all] });
+      showNotification('success', 'Transaction deleted successfully');
+      // Invalidate all transaction queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
-    onError: (error, variables, context) => {
-      // Show error notification
-      setNotification({ 
-        type: 'error', 
-        message: error instanceof Error ? error.message : 'Failed to delete transaction' 
-      });
-      
-      // Revert to the snapshot if available
-      if (context?.previousTransactions) {
-        queryClient.setQueryData([TRANSACTION_KEYS.all], context.previousTransactions);
-      }
+    onError: (error) => {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to delete transaction');
     }
   });
 
-  const toggleFlag = (id: number) => {
-    setExpandedFlags(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
-
-  const handleSort = (column: TransactionSortColumn) => {
-    onChangeSort(column);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-
-  const formatAmount = (amount: string | null | undefined) => {
-    // Check if amount is null, undefined, empty string or not a valid number
-    if (amount === null || amount === undefined || amount === '' || isNaN(parseFloat(amount))) {
-      return '-';
+  // Create transaction mutation - simplified
+  const createMutation = useMutation({
+    mutationFn: async (newTransaction: Partial<Transaction>) => {
+      if (onCreateTransaction) {
+        return onCreateTransaction(newTransaction);
+      }
+      // Use the API function if no custom handler is provided
+      const { createTransaction } = await import('../api/transactions');
+      return createTransaction(newTransaction);
+    },
+    onSuccess: () => {
+      showNotification('success', 'Transaction created successfully');
+      setShowNewTransactionRow(false);
+      // Invalidate all transaction queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+    onError: (error) => {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to create transaction');
     }
+  });
+
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
     
-    const numAmount = parseFloat(amount);
-    return numAmount.toLocaleString('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    });
+    // Clear notification after 3 seconds
+    setTimeout(() => {
+      setNotification(null);
+    }, 3000);
+  };
+
+  const handleDeleteTransaction = (id: number) => {
+    deleteMutation.mutate(id);
+  };
+
+  const handleCreateTransaction = (transaction: Partial<Transaction>) => {
+    createMutation.mutate(transaction);
   };
 
   const renderSortArrow = (column: TransactionSortColumn) => {
@@ -208,42 +106,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     );
   };
 
-  const handleEdit = (transaction: Transaction) => {
-    if (editingId === transaction.id) {
-      // Save changes
-      updateMutation.mutate({
-        ...transaction,
-        ...editedValues
-      });
-    } else {
-      // Start editing
-      setEditingId(transaction.id);
-      setEditedValues({});
-    }
-  };
-
-  const handleDelete = (id: number) => {
-    if (confirm('Are you sure you want to delete this transaction?')) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditedValues({});
-  };
-
-  const handleInputChange = (field: keyof Transaction, value: string) => {
-    setEditedValues(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const isFieldEditable = (field: keyof Transaction) => {
-    return editableFields.includes(field);
-  };
-
   return (
     <div className="transaction-table-container">
       {notification && (
@@ -251,16 +113,31 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
           {notification.message}
         </div>
       )}
+      
+      <div className="table-header">
+        <h2>Transactions</h2>
+        <div className="table-actions">
+          <button 
+            className="icon-button add-button"
+            onClick={() => setShowNewTransactionRow(!showNewTransactionRow)}
+            title={showNewTransactionRow ? "Cancel" : "Add new transaction"}
+          >
+            <Plus size={18} />
+            <span>Add Transaction</span>
+          </button>
+        </div>
+      </div>
+
       <table className="transaction-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('datetime')}>
+            <th onClick={() => onChangeSort('datetime')}>
               Date {renderSortArrow('datetime')}
             </th>
-            <th onClick={() => handleSort('amount')}>
+            <th onClick={() => onChangeSort('amount')}>
               Amount {renderSortArrow('amount')}
             </th>
-            <th onClick={() => handleSort('description')}>
+            <th onClick={() => onChangeSort('description')}>
               Description {renderSortArrow('description')}
             </th>
             <th>Category</th>
@@ -268,167 +145,27 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
           </tr>
         </thead>
         <tbody>
+          {/* New Transaction Row */}
+          {showNewTransactionRow && (
+            <TransactionRow
+              transaction={null}
+              isNew={true}
+              onSaveNew={handleCreateTransaction}
+              onCancel={() => setShowNewTransactionRow(false)}
+              editableFields={editableFields}
+              showNotification={showNotification}
+            />
+          )}
+          
+          {/* Existing Transactions */}
           {transactions.map(transaction => (
-            <React.Fragment key={transaction.id}>
-              <tr className={editingId === transaction.id ? 'editing-row' : ''}>
-                <td>
-                  {editingId === transaction.id && isFieldEditable('datetime') ? (
-                    <input
-                      type="datetime-local"
-                      value={editedValues.datetime !== undefined ?
-                        new Date(editedValues.datetime).toISOString().slice(0, 16) :
-                        new Date(transaction.datetime).toISOString().slice(0, 16)}
-                      onChange={(e) => handleInputChange('datetime', new Date(e.target.value).toISOString())}
-                      disabled={updateMutation.isPending}
-                    />
-                  ) : (
-                    formatDate(transaction.datetime)
-                  )}
-                </td>
-                <td className={
-                  isNaN(parseFloat(transaction.amount)) ? 'neutral-amount' : 
-                  parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'
-                }>
-                  {editingId === transaction.id && isFieldEditable('amount') ? (
-                    <input
-                      type="text"
-                      value={editedValues.amount !== undefined ? editedValues.amount : transaction.amount}
-                      onChange={(e) => handleInputChange('amount', e.target.value)}
-                      className={
-                        editedValues.amount === undefined ? 
-                          (isNaN(parseFloat(transaction.amount)) ? 'neutral-amount' : 
-                           parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount') :
-                          (isNaN(parseFloat(editedValues.amount)) ? 'neutral-amount' : 
-                           parseFloat(editedValues.amount) < 0 ? 'negative-amount' : 'positive-amount')
-                      }
-                      disabled={updateMutation.isPending}
-                    />
-                  ) : (
-                    formatAmount(transaction.amount)
-                  )}
-                </td>
-                <td>
-                  {editingId === transaction.id && isFieldEditable('description') ? (
-                    <input
-                      type="text"
-                      value={editedValues.description !== undefined ? editedValues.description : transaction.description}
-                      onChange={(e) => handleInputChange('description', e.target.value)}
-                      disabled={updateMutation.isPending}
-                    />
-                  ) : (
-                    transaction.description
-                  )}
-                </td>
-                <td>
-                  {editingId === transaction.id && isFieldEditable('category') ? (
-                    <input
-                      type="text"
-                      value={editedValues.category !== undefined ? editedValues.category : transaction.category}
-                      onChange={(e) => handleInputChange('category', e.target.value)}
-                      disabled={updateMutation.isPending}
-                    />
-                  ) : (
-                    transaction.category
-                  )}
-                </td>
-                <td className="action-buttons">
-                  {editingId === transaction.id ? (
-                    <>
-                      <button
-                        className="icon-button save-button"
-                        onClick={() => handleEdit(transaction)}
-                        disabled={updateMutation.isPending}
-                        title="Save changes"
-                      >
-                        {updateMutation.isPending ? (
-                          <Loader2 className="spinner-icon" size={18} />
-                        ) : (
-                          <Check size={18} />
-                        )}
-                      </button>
-                      <button
-                        className="icon-button cancel-button"
-                        onClick={handleCancelEdit}
-                        disabled={updateMutation.isPending}
-                        title="Cancel"
-                      >
-                        <X size={18} />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="icon-button edit-button"
-                        onClick={() => handleEdit(transaction)}
-                        title="Edit transaction"
-                      >
-                        <Edit size={18} />
-                      </button>
-                      <button
-                        className="icon-button delete-button"
-                        onClick={() => handleDelete(transaction.id)}
-                        disabled={deleteMutation.isPending && deleteMutation.variables === transaction.id}
-                        title="Delete transaction"
-                      >
-                        {deleteMutation.isPending && deleteMutation.variables === transaction.id ? (
-                          <Loader2 className="spinner-icon" size={18} />
-                        ) : (
-                          <Trash2 size={18} />
-                        )}
-                      </button>
-                      <button
-                        className="icon-button info-button"
-                        onClick={() => toggleFlag(transaction.id)}
-                        title="Transaction details"
-                      >
-                        <Info size={18} />
-                        {transaction.flags.length > 0 && (
-                          <span className="flag-count">{transaction.flags.length}</span>
-                        )}
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-              {expandedFlags[transaction.id] && (
-                <tr className="flag-details-row">
-                  <td colSpan={5}>
-                    <div className="flag-details">
-                      <h4>Transaction Details</h4>
-                      <div className="transaction-metadata">
-                        <div className="metadata-item">
-                          <span className="metadata-label">Created:</span> {formatDate(transaction.created_at)}
-                        </div>
-                        <div className="metadata-item">
-                          <span className="metadata-label">Updated:</span> {formatDate(transaction.updated_at)}
-                        </div>
-                        <div className="metadata-item">
-                          <span className="metadata-label">ID:</span> {transaction.id}
-                        </div>
-                      </div>
-                      
-                      {transaction.flags.length > 0 && (
-                        <>
-                          <h5>Flags</h5>
-                          <ul className="flags-list">
-                            {transaction.flags.map((flag, idx) => (
-                              <li key={idx} className="flag-item">
-                                <strong>{flag.flag_type}</strong>: {flag.message}
-                                {flag.duplicates_transaction && (
-                                  <div className="duplicate-info">
-                                    Duplicates Transaction ID: {flag.duplicates_transaction}
-                                  </div>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </React.Fragment>
+            <TransactionRow
+              key={transaction.id}
+              transaction={transaction}
+              onDelete={handleDeleteTransaction}
+              editableFields={editableFields}
+              showNotification={showNotification}
+            />
           ))}
         </tbody>
       </table>

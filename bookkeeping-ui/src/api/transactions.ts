@@ -37,10 +37,16 @@ export async function uploadCSV(file: File): Promise<UploadCSVResponse> {
   }
 }
 
-export const deleteTransaction = async (args: {transaction_id: number}) => {
-  console.log('to delete!', args);
-  await new Promise((r) => setTimeout(r, 1000));
+export async function deleteTransaction(id: number): Promise<void> {
+  // Delete the transaction using the API
+  await api.delete(`/transactions/${id}/`);
 };
+
+export async function createTransaction(transaction: Partial<Transaction>): Promise<Transaction> {
+  // Create a new transaction
+  const response = await api.post('/transactions/', transaction);
+  return response.data;
+}
 
 export async function updateTransaction(transaction: Partial<Transaction> & { id: number }): Promise<Transaction> {
   // DRF ModelViewSet supports PUT requests by default even with commented update method
@@ -84,7 +90,7 @@ export async function fetchTransactions(params: FetchTransactionsParams = {}): P
 }
 
 export const TRANSACTION_KEYS = {
-  all: ['all-transactions'],
+  all: ['transactions'],
   paginated: (params: FetchTransactionsParams) => ['transactions', 'paginated', params]
 }
 

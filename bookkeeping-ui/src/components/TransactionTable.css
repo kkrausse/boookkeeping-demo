@@ -238,3 +238,45 @@
 .positive-amount {
   color: #2ecc71;
 }
+
+.neutral-amount {
+  color: #95a5a6;
+}
+
+/* Notification styles */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 10px 16px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-weight: 500;
+  font-size: 14px;
+  animation: slideIn 0.3s ease-out forwards;
+  max-width: 300px;
+}
+
+.notification.success {
+  background-color: #d4edda;
+  border-left: 4px solid #28a745;
+  color: #155724;
+}
+
+.notification.error {
+  background-color: #f8d7da;
+  border-left: 4px solid #dc3545;
+  color: #721c24;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

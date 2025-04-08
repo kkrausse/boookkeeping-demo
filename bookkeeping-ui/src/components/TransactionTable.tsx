@@ -33,17 +33,77 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
   const [expandedFlags, setExpandedFlags] = useState<Record<number, boolean>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editedValues, setEditedValues] = useState<Partial<Transaction>>({});
+  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
   // Update transaction mutation
   const updateMutation = useMutation({
     mutationFn: (updatedTransaction: Partial<Transaction> & { id: number }) => {
       return updateTransaction(updatedTransaction);
     },
+    // Use optimistic update
+    onMutate: async (newTransaction) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [TRANSACTION_KEYS.all] });
+      
+      // Snapshot the previous value
+      const previousTransactions = queryClient.getQueryData<Transaction[]>([TRANSACTION_KEYS.all]);
+      
+      // Optimistically update the cache
+      if (previousTransactions) {
+        queryClient.setQueryData<any>([TRANSACTION_KEYS.all], (old: any) => {
+          // If the data structure is paginated
+          if (old?.results) {
+            return {
+              ...old,
+              results: old.results.map((transaction: Transaction) => 
+                transaction.id === newTransaction.id 
+                  ? { ...transaction, ...newTransaction } 
+                  : transaction
+              )
+            };
+          }
+          // If it's a simple array
+          return old.map((transaction: Transaction) => 
+            transaction.id === newTransaction.id 
+              ? { ...transaction, ...newTransaction } 
+              : transaction
+          );
+        });
+      }
+      
+      // Return context with the snapshotted value
+      return { previousTransactions };
+    },
     onSuccess: () => {
-      // Invalidate and refetch queries related to transactions
-      queryClient.invalidateQueries({ queryKey: [TRANSACTION_KEYS.all] });
+      // Show success notification
+      setNotification({ 
+        type: 'success', 
+        message: 'Transaction updated successfully' 
+      });
+      
+      // Clear notification after 3 seconds
+      setTimeout(() => {
+        setNotification(null);
+      }, 3000);
+      
+      // Reset editing state
       setEditingId(null);
       setEditedValues({});
+      
+      // Refresh data to ensure consistency
+      queryClient.invalidateQueries({ queryKey: [TRANSACTION_KEYS.all] });
+    },
+    onError: (error, variables, context) => {
+      // Show error notification
+      setNotification({ 
+        type: 'error', 
+        message: error instanceof Error ? error.message : 'Failed to update transaction' 
+      });
+      
+      // Revert to the snapshot if available
+      if (context?.previousTransactions) {
+        queryClient.setQueryData([TRANSACTION_KEYS.all], context.previousTransactions);
+      }
     }
   });
 
@@ -55,9 +115,58 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
       console.log('Deleting transaction:', id);
       return id;
     },
+    // Use optimistic update
+    onMutate: async (transactionId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [TRANSACTION_KEYS.all] });
+      
+      // Snapshot the previous value
+      const previousTransactions = queryClient.getQueryData<any>([TRANSACTION_KEYS.all]);
+      
+      // Optimistically update the cache
+      if (previousTransactions) {
+        queryClient.setQueryData<any>([TRANSACTION_KEYS.all], (old: any) => {
+          // If the data structure is paginated
+          if (old?.results) {
+            return {
+              ...old,
+              results: old.results.filter((transaction: Transaction) => transaction.id !== transactionId)
+            };
+          }
+          // If it's a simple array
+          return old.filter((transaction: Transaction) => transaction.id !== transactionId);
+        });
+      }
+      
+      // Return context with the snapshotted value
+      return { previousTransactions };
+    },
     onSuccess: () => {
-      // Invalidate and refetch queries related to transactions
+      // Show success notification
+      setNotification({ 
+        type: 'success', 
+        message: 'Transaction deleted successfully' 
+      });
+      
+      // Clear notification after 3 seconds
+      setTimeout(() => {
+        setNotification(null);
+      }, 3000);
+      
+      // Refresh data to ensure consistency
       queryClient.invalidateQueries({ queryKey: [TRANSACTION_KEYS.all] });
+    },
+    onError: (error, variables, context) => {
+      // Show error notification
+      setNotification({ 
+        type: 'error', 
+        message: error instanceof Error ? error.message : 'Failed to delete transaction' 
+      });
+      
+      // Revert to the snapshot if available
+      if (context?.previousTransactions) {
+        queryClient.setQueryData([TRANSACTION_KEYS.all], context.previousTransactions);
+      }
     }
   });
 
@@ -76,7 +185,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     return new Date(dateString).toLocaleString();
   };
 
-  const formatAmount = (amount: string) => {
+  const formatAmount = (amount: string | null | undefined) => {
+    // Check if amount is null, undefined, empty string or not a valid number
+    if (amount === null || amount === undefined || amount === '' || isNaN(parseFloat(amount))) {
+      return '-';
+    }
+    
     const numAmount = parseFloat(amount);
     return numAmount.toLocaleString('en-US', {
       style: 'currency',
@@ -132,6 +246,11 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
 
   return (
     <div className="transaction-table-container">
+      {notification && (
+        <div className={`notification ${notification.type}`}>
+          {notification.message}
+        </div>
+      )}
       <table className="transaction-table">
         <thead>
           <tr>
@@ -166,13 +285,22 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                     formatDate(transaction.datetime)
                   )}
                 </td>
-                <td className={parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}>
+                <td className={
+                  isNaN(parseFloat(transaction.amount)) ? 'neutral-amount' : 
+                  parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'
+                }>
                   {editingId === transaction.id && isFieldEditable('amount') ? (
                     <input
                       type="text"
                       value={editedValues.amount !== undefined ? editedValues.amount : transaction.amount}
                       onChange={(e) => handleInputChange('amount', e.target.value)}
-                      className={parseFloat(editedValues.amount || transaction.amount) < 0 ? 'negative-amount' : 'positive-amount'}
+                      className={
+                        editedValues.amount === undefined ? 
+                          (isNaN(parseFloat(transaction.amount)) ? 'neutral-amount' : 
+                           parseFloat(transaction.amount) < 0 ? 'negative-amount' : 'positive-amount') :
+                          (isNaN(parseFloat(editedValues.amount)) ? 'neutral-amount' : 
+                           parseFloat(editedValues.amount) < 0 ? 'negative-amount' : 'positive-amount')
+                      }
                       disabled={updateMutation.isPending}
                     />
                   ) : (

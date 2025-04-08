@@ -9,6 +9,7 @@ from datetime import datetime
 import pytz
 from .models import Transaction, TransactionFlag
 from .serializers import TransactionSerializer, TransactionCSVSerializer
+from .utils import create_transaction_with_flags, update_transaction_with_flags
 
 class StandardResultsSetPagination(pagination.PageNumberPagination):
     page_size = 10
@@ -24,11 +25,60 @@ class TransactionViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['description', 'category', 'amount', 'datetime', 'created_at', 'updated_at']
     ordering = ['-created_at']  # Default ordering
+    
+    def create(self, request, *args, **kwargs):
+        """Override create to handle flags."""
+        try:
+            # Use our utility to create transaction with flags
+            transaction, flags = create_transaction_with_flags(request.data)
+            
+            # Serialize and return
+            serializer = self.get_serializer(transaction)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def update(self, request, *args, **kwargs):
+        """Override update to handle flags."""
+        instance = self.get_object()
+        
+        try:
+            # Use our utility to update transaction with flags
+            transaction, flags = update_transaction_with_flags(instance, request.data)
+            
+            # Serialize and return
+            serializer = self.get_serializer(transaction)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            
+    def partial_update(self, request, *args, **kwargs):
+        """Override partial_update to handle flags."""
+        instance = self.get_object()
+        
+        # For partial updates, we need to merge existing data with the update
+        data = {
+            'description': instance.description,
+            'category': instance.category,
+            'amount': instance.amount,
+            'datetime': instance.datetime
+        }
+        # Update with new data
+        data.update(request.data)
+        
+        try:
+            # Use our utility to update transaction with flags
+            transaction, flags = update_transaction_with_flags(instance, data)
+            
+            # Serialize and return
+            serializer = self.get_serializer(transaction)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], serializer_class=TransactionCSVSerializer,
             parser_classes=[parsers.MultiPartParser])
     def upload(self, request, *args, **kwargs):
-        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -52,89 +102,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
         
         for row_num, row in enumerate(reader, start=1):
             try:
-                # Initialize transaction with default values
-                transaction_data = {
-                    'description': row.get('description', ''),
-                    'category': row.get('category', ''),
-                    'datetime': timezone.now(),  # Default to current time
-                }
-                
-                # Create flags list for this transaction
-                transaction_flags = []
-                
-                # Process amount with graceful error handling
-                try:
-                    if 'amount' in row and row['amount']:
-                        transaction_data['amount'] = Decimal(row['amount'])
-                    else:
-                        transaction_data['amount'] = Decimal('0.00')
-                        transaction_flags.append({
-                            'flag_type': 'PARSE_ERROR',
-                            'message': f"Missing or invalid amount value"
-                        })
-                except (ValueError, InvalidOperation):
-                    transaction_data['amount'] = Decimal('0.00')
-                    transaction_flags.append({
-                        'flag_type': 'PARSE_ERROR',
-                        'message': f"Could not parse amount: '{row.get('amount', '')}'"
-                    })
-                
-                # Process datetime with graceful error handling
-                if 'datetime' in row and row['datetime']:
-                    try:
-                        # Try common datetime formats
-                        formats = [
-                            '%Y-%m-%d %H:%M:%S',  # 2023-01-01 14:30:00
-                            '%Y-%m-%d',           # 2023-01-01
-                            '%m/%d/%Y %H:%M:%S',  # 01/01/2023 14:30:00
-                            '%m/%d/%Y',           # 01/01/2023
-                            '%d/%m/%Y',           # 31/12/2023
-                            '%b %d %Y',           # Jan 01 2023
-                        ]
-                        
-                        dt = None
-                        for fmt in formats:
-                            try:
-                                dt = datetime.strptime(row['datetime'], fmt)
-                                break
-                            except ValueError:
-                                continue
-                        
-                        if dt:
-                            # Ensure timezone awareness
-                            if timezone.is_naive(dt):
-                                dt = timezone.make_aware(dt)
-                            transaction_data['datetime'] = dt
-                        else:
-                            raise ValueError(f"Couldn't parse date format")
-                    except Exception:
-                        transaction_flags.append({
-                            'flag_type': 'PARSE_ERROR',
-                            'message': f"Could not parse date: '{row['datetime']}'"
-                        })
-                
-                # Check if we have enough valid data to create a transaction
-                if (not transaction_data['description'] and 
-                    transaction_data['amount'] == Decimal('0.00')):
-                    raise ValueError("Both description and amount are missing or invalid")
-                
-                # Create and save transaction
-                transaction = Transaction(**transaction_data)
-                transaction.save()
-                
-                # Create transaction flags for this record
-                for flag_data in transaction_flags:
-                    TransactionFlag.objects.create(
-                        transaction=transaction,
-                        flag_type=flag_data['flag_type'],
-                        message=flag_data['message']
-                    )
-                
+                # Use the utility function to create transaction with flags
+                transaction, flags = create_transaction_with_flags(row)
                 created_transactions.append(transaction)
                 
                 # Add warning if we had any flags
-                if transaction_flags:
-                    formatted_flags = ", ".join([f"{flag['flag_type']}: {flag['message']}" for flag in transaction_flags])
+                if flags:
+                    formatted_flags = ", ".join([f"{flag['flag_type']}: {flag['message']}" for flag in flags])
                     warnings.append(f"Row {row_num}: Created with warnings - {formatted_flags}")
                 
             except Exception as e:

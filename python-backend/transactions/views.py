@@ -4,7 +4,10 @@ from rest_framework.decorators import action
 import csv
 from io import TextIOWrapper
 from decimal import Decimal, InvalidOperation
-from .models import Transaction
+from django.utils import timezone
+from datetime import datetime
+import pytz
+from .models import Transaction, TransactionFlag
 from .serializers import TransactionSerializer, TransactionCSVSerializer
 
 class StandardResultsSetPagination(pagination.PageNumberPagination):
@@ -25,6 +28,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], serializer_class=TransactionCSVSerializer,
             parser_classes=[parsers.MultiPartParser])
     def upload(self, request, *args, **kwargs):
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -33,40 +37,133 @@ class TransactionViewSet(viewsets.ModelViewSet):
         text_file = TextIOWrapper(csv_file.file, encoding='utf-8')
         reader = csv.DictReader(text_file)
 
-        # Validate CSV headers
-        required_headers = {'description', 'category', 'amount'}
-        if not required_headers.issubset(reader.fieldnames):
+        # Check for minimum required headers
+        required_headers = {'description', 'amount'}
+        if not any(header in reader.fieldnames for header in required_headers):
             return Response(
-                {"error": "CSV must contain 'description', 'category', and 'amount' headers"},
+                {"error": "CSV must contain at least 'description' or 'amount' column"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Process each row
         created_transactions = []
-        errors = []
+        skipped_rows = []
+        warnings = []
+        
         for row_num, row in enumerate(reader, start=1):
             try:
-                # Convert amount to Decimal
-                amount = Decimal(row['amount'])
-                transaction = Transaction(
-                    description=row['description'],
-                    category=row['category'],
-                    amount=amount
-                )
-                transaction.full_clean()  # Validate model fields
+                # Initialize transaction with default values
+                transaction_data = {
+                    'description': row.get('description', ''),
+                    'category': row.get('category', ''),
+                    'datetime': timezone.now(),  # Default to current time
+                }
+                
+                # Create flags list for this transaction
+                transaction_flags = []
+                
+                # Process amount with graceful error handling
+                try:
+                    if 'amount' in row and row['amount']:
+                        transaction_data['amount'] = Decimal(row['amount'])
+                    else:
+                        transaction_data['amount'] = Decimal('0.00')
+                        transaction_flags.append({
+                            'flag_type': 'PARSE_ERROR',
+                            'message': f"Missing or invalid amount value"
+                        })
+                except (ValueError, InvalidOperation):
+                    transaction_data['amount'] = Decimal('0.00')
+                    transaction_flags.append({
+                        'flag_type': 'PARSE_ERROR',
+                        'message': f"Could not parse amount: '{row.get('amount', '')}'"
+                    })
+                
+                # Process datetime with graceful error handling
+                if 'datetime' in row and row['datetime']:
+                    try:
+                        # Try common datetime formats
+                        formats = [
+                            '%Y-%m-%d %H:%M:%S',  # 2023-01-01 14:30:00
+                            '%Y-%m-%d',           # 2023-01-01
+                            '%m/%d/%Y %H:%M:%S',  # 01/01/2023 14:30:00
+                            '%m/%d/%Y',           # 01/01/2023
+                            '%d/%m/%Y',           # 31/12/2023
+                            '%b %d %Y',           # Jan 01 2023
+                        ]
+                        
+                        dt = None
+                        for fmt in formats:
+                            try:
+                                dt = datetime.strptime(row['datetime'], fmt)
+                                break
+                            except ValueError:
+                                continue
+                        
+                        if dt:
+                            # Ensure timezone awareness
+                            if timezone.is_naive(dt):
+                                dt = timezone.make_aware(dt)
+                            transaction_data['datetime'] = dt
+                        else:
+                            raise ValueError(f"Couldn't parse date format")
+                    except Exception:
+                        transaction_flags.append({
+                            'flag_type': 'PARSE_ERROR',
+                            'message': f"Could not parse date: '{row['datetime']}'"
+                        })
+                
+                # Check if we have enough valid data to create a transaction
+                if (not transaction_data['description'] and 
+                    transaction_data['amount'] == Decimal('0.00')):
+                    raise ValueError("Both description and amount are missing or invalid")
+                
+                # Create and save transaction
+                transaction = Transaction(**transaction_data)
                 transaction.save()
+                
+                # Create transaction flags for this record
+                for flag_data in transaction_flags:
+                    TransactionFlag.objects.create(
+                        transaction=transaction,
+                        flag_type=flag_data['flag_type'],
+                        message=flag_data['message']
+                    )
+                
                 created_transactions.append(transaction)
-            except (ValueError, InvalidOperation):
-                errors.append(f"Row {row_num}: Invalid amount '{row['amount']}'")
+                
+                # Add warning if we had any flags
+                if transaction_flags:
+                    formatted_flags = ", ".join([f"{flag['flag_type']}: {flag['message']}" for flag in transaction_flags])
+                    warnings.append(f"Row {row_num}: Created with warnings - {formatted_flags}")
+                
             except Exception as e:
-                errors.append(f"Row {row_num}: {str(e)}")
+                # Convert technical errors to user-friendly messages
+                error_msg = str(e)
+                if "NOT NULL constraint failed" in error_msg and "datetime" in error_msg:
+                    error_msg = "Missing required date field"
+                elif "NOT NULL constraint failed" in error_msg:
+                    field = error_msg.split("NOT NULL constraint failed: transactions_transaction.")[1]
+                    error_msg = f"Missing required {field} field"
+                
+                skipped_rows.append(f"Row {row_num}: {error_msg}")
 
         # Serialize the created transactions
         transaction_serializer = TransactionSerializer(created_transactions, many=True)
 
         response_data = {
             "created": transaction_serializer.data,
-            "errors": errors if errors else None
+            "created_count": len(created_transactions),
+            "warnings": warnings if warnings else None,
+            "errors": skipped_rows if skipped_rows else None
         }
-        status_code = status.HTTP_201_CREATED if not errors else status.HTTP_207_MULTI_STATUS
+        
+        if created_transactions:
+            if skipped_rows:
+                status_code = status.HTTP_207_MULTI_STATUS
+            else:
+                status_code = status.HTTP_201_CREATED
+        else:
+            status_code = status.HTTP_400_BAD_REQUEST
+            
         return Response(response_data, status=status_code)

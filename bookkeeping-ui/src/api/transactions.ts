@@ -7,18 +7,34 @@ const api = axios.create({
   },
 });
 
-export async function uploadCSV(file: File): Promise<any> {
+export interface UploadCSVResponse {
+  created: Transaction[];
+  created_count: number;
+  warnings?: string[] | null;
+  errors?: string[] | null;
+  error?: string;
+}
+
+export async function uploadCSV(file: File): Promise<UploadCSVResponse> {
   // Create FormData object to handle file upload
   const formData = new FormData();
   formData.append('file', file);
-  // Make the POST request with form data
-  const response = await api.post('/transactions/upload/', formData, {
-    headers: {
-      // Override default Content-Type to handle multipart/form-data
-      'Content-Type': 'multipart/form-data'
+  
+  try {
+    // Make the POST request with form data
+    const response = await api.post('/transactions/upload/', formData, {
+      headers: {
+        // Override default Content-Type to handle multipart/form-data
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      return error.response.data;
     }
-  });
-  return response.data;
+    throw error;
+  }
 }
 
 export const deleteTransaction = async (args: {transaction_id: number}) => {

@@ -28,27 +28,99 @@ const queryClient = new QueryClient()
 
 function CsvUpload() {
   const queryClient = useQueryClient();
+  const [uploadResult, setUploadResult] = useState<UploadCSVResponse | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   
-  const { mutate: fileMutate } = useMutation<void, Error, File>({
+  const { mutate: fileMutate } = useMutation<UploadCSVResponse, Error, File>({
     mutationFn: uploadCSV,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({queryKey: ['transactions']});
+      setUploadResult(data);
+      setIsUploading(false);
     },
     onError: (err) => {
       console.error('Upload failed:', err);
+      setIsUploading(false);
+      setUploadResult({
+        created: [],
+        created_count: 0,
+        errors: [`Upload failed: ${err.message}`]
+      });
     },
   });
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
-      fileMutate(event.target.files[0])
+      setIsUploading(true);
+      setUploadResult(null);
+      fileMutate(event.target.files[0]);
     }
-  }
+  };
 
+  const clearResults = () => {
+    setUploadResult(null);
+  };
 
   return (
-    <input type="file" accept=".csv" onChange={handleFileChange} />
-  )
+    <div className="csv-upload-container">
+      <div className="csv-upload-header">
+        <h3>Import Transactions</h3>
+        <label className="csv-upload-button">
+          {isUploading ? 'Uploading...' : 'Choose CSV file'}
+          <input 
+            type="file" 
+            accept=".csv" 
+            onChange={handleFileChange} 
+            disabled={isUploading} 
+            style={{ display: 'none' }}
+          />
+        </label>
+      </div>
+      
+      {uploadResult && (
+        <div className="upload-results">
+          <div className="upload-results-header">
+            <h4>Upload Results</h4>
+            <button onClick={clearResults} className="close-button">×</button>
+          </div>
+          
+          {uploadResult.created_count > 0 && (
+            <div className="upload-success">
+              Successfully imported {uploadResult.created_count} transactions
+            </div>
+          )}
+          
+          {uploadResult.error && (
+            <div className="upload-error-message">
+              {uploadResult.error}
+            </div>
+          )}
+          
+          {uploadResult.errors && uploadResult.errors.length > 0 && (
+            <div className="upload-errors">
+              <h5>Errors ({uploadResult.errors.length})</h5>
+              <ul className="error-list">
+                {uploadResult.errors.map((error, index) => (
+                  <li key={`error-${index}`} className="error-item">{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {uploadResult.warnings && uploadResult.warnings.length > 0 && (
+            <div className="upload-warnings">
+              <h5>Warnings ({uploadResult.warnings.length})</h5>
+              <ul className="warning-list">
+                {uploadResult.warnings.map((warning, index) => (
+                  <li key={`warning-${index}`} className="warning-item">{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TransactionsPage() {

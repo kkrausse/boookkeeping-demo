@@ -58,3 +58,120 @@
   color: #666;
   font-size: 0.9rem;
 }
+
+/* CSV Upload Styles */
+.csv-upload-container {
+  margin-bottom: 20px;
+  width: 100%;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background-color: #f9f9f9;
+  overflow: hidden;
+}
+
+.csv-upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.csv-upload-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #333;
+}
+
+.csv-upload-button {
+  background-color: #4a90e2;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border: none;
+  transition: background-color 0.2s;
+}
+
+.csv-upload-button:hover {
+  background-color: #3a7bc8;
+}
+
+.upload-results {
+  padding: 0;
+  background-color: white;
+}
+
+.upload-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.upload-results-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #333;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #777;
+}
+
+.close-button:hover {
+  color: #333;
+}
+
+.upload-success {
+  padding: 12px 16px;
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 500;
+  border-bottom: 1px solid #c8e6c9;
+}
+
+.upload-error-message {
+  padding: 12px 16px;
+  background-color: #ffebee;
+  color: #c62828;
+  font-weight: 500;
+  border-bottom: 1px solid #ffcdd2;
+}
+
+.upload-errors, .upload-warnings {
+  padding: 12px 16px;
+}
+
+.upload-errors h5, .upload-warnings h5 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.error-list, .warning-list {
+  margin: 0;
+  padding: 0 0 0 20px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.error-item {
+  color: #d32f2f;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+}
+
+.warning-item {
+  color: #f57c00;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+}

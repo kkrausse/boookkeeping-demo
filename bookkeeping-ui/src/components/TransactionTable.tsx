@@ -5,11 +5,13 @@ import {
   TransactionSort, 
   TransactionSortColumn, 
   TRANSACTION_KEYS, 
-  FilterParams 
+  FilterParams,
+  updateTransaction
 } from '../api/transactions';
-import { Plus, Filter, Loader2 } from 'lucide-react';
+import { Plus, Filter, Loader2, Tag, Flag, Minus, Check } from 'lucide-react';
 import { TransactionRow } from './TransactionRow';
 import { FilterPanel } from './FilterPanel';
+import { ActionMenu } from './ActionMenu';
 import './TransactionTable.css';
 
 type AmountComparisonType = 'above' | 'below' | 'equal' | '';
@@ -55,6 +57,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [showNewTransactionRow, setShowNewTransactionRow] = useState<boolean>(false);
   const [showFilters, setShowFilters] = useState<boolean>(false);
+  
+  // Selection state
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<number>>(new Set());
+  const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
+  const [showFlagModal, setShowFlagModal] = useState<boolean>(false);
+  const [bulkActionValue, setBulkActionValue] = useState<string>('');
   
   const isFiltersActive = () => {
     return filters.description !== '' || 
@@ -127,6 +135,110 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
   const handleCreateTransaction = (transaction: Partial<Transaction>) => {
     createMutation.mutate(transaction);
   };
+  
+  // Batch update mutation for applying category or flag to multiple transactions
+  const batchUpdateMutation = useMutation({
+    mutationFn: async (updates: { 
+      transactionIds: number[], 
+      updateType: 'category' | 'flag', 
+      value: string 
+    }) => {
+      const { transactionIds, updateType, value } = updates;
+      
+      // Process each transaction sequentially
+      const results = [];
+      for (const id of transactionIds) {
+        const transaction = transactions.find(t => t.id === id);
+        if (!transaction) continue;
+        
+        // Prepare the update based on type
+        const update: any = { id };
+        if (updateType === 'category') {
+          update.category = value;
+        } else if (updateType === 'flag') {
+          // For flags, we'd need backend support for adding flags directly
+          // This is a placeholder - the actual implementation would depend on the API
+          console.log(`Adding flag "${value}" to transaction ${id}`);
+        }
+        
+        // Apply the update
+        if (updateType === 'category') {
+          const result = await updateTransaction(update);
+          results.push(result);
+        }
+      }
+      
+      return results;
+    },
+    onSuccess: () => {
+      // Clear selection after successful update
+      setSelectedTransactions(new Set());
+      setShowCategoryModal(false);
+      setShowFlagModal(false);
+      setBulkActionValue('');
+      showNotification('success', 'Selected transactions updated successfully');
+      // Refresh transaction data
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+    onError: (error) => {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to update transactions');
+    }
+  });
+  
+  // Selection handlers
+  const handleSelectAll = () => {
+    if (selectedTransactions.size > 0) {
+      // If any are selected, deselect all
+      setSelectedTransactions(new Set());
+    } else {
+      // Select all visible transactions
+      const newSelection = new Set<number>();
+      transactions.forEach(transaction => {
+        if (transaction.id) {
+          newSelection.add(transaction.id);
+        }
+      });
+      setSelectedTransactions(newSelection);
+    }
+  };
+  
+  const handleSelectTransaction = (id: number, selected: boolean) => {
+    const newSelection = new Set(selectedTransactions);
+    if (selected) {
+      newSelection.add(id);
+    } else {
+      newSelection.delete(id);
+    }
+    setSelectedTransactions(newSelection);
+  };
+  
+  // Action handlers
+  const handleBulkSetCategory = () => {
+    if (selectedTransactions.size === 0 || !bulkActionValue) return;
+    
+    batchUpdateMutation.mutate({
+      transactionIds: Array.from(selectedTransactions),
+      updateType: 'category',
+      value: bulkActionValue
+    });
+  };
+  
+  const handleBulkAddFlag = () => {
+    if (selectedTransactions.size === 0 || !bulkActionValue) return;
+    
+    // For now, just show a notification since flag API might need special handling
+    showNotification('success', `Flag "${bulkActionValue}" would be added to ${selectedTransactions.size} transactions`);
+    setSelectedTransactions(new Set());
+    setShowFlagModal(false);
+    setBulkActionValue('');
+  };
+  
+  // Determine checkbox state for header (all, none, or some selected)
+  const getSelectAllState = () => {
+    if (selectedTransactions.size === 0) return 'none';
+    if (selectedTransactions.size === transactions.length) return 'all';
+    return 'some';
+  };
 
   const renderSortArrow = (column: TransactionSortColumn) => {
     if (currentSort.column !== column) return null;
@@ -181,9 +293,111 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         />
       )}
 
+      {/* Action Menu for selected transactions */}
+      <div className="action-menu-container">
+        {selectedTransactions.size > 0 && (
+          <ActionMenu 
+            visible={true}
+            selectedCount={selectedTransactions.size}
+            onCategoryAction={() => setShowCategoryModal(true)}
+            onFlagAction={() => setShowFlagModal(true)}
+          />
+        )}
+      </div>
+      
+      {/* Category Modal */}
+      {showCategoryModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h4>Set Category for {selectedTransactions.size} items</h4>
+            <input
+              type="text"
+              placeholder="Enter category name"
+              value={bulkActionValue}
+              onChange={(e) => setBulkActionValue(e.target.value)}
+            />
+            <div className="modal-actions">
+              <button 
+                className="cancel-button" 
+                onClick={() => {
+                  setShowCategoryModal(false);
+                  setBulkActionValue('');
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="save-button" 
+                onClick={handleBulkSetCategory}
+                disabled={!bulkActionValue}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Flag Modal */}
+      {showFlagModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h4>Add Flag to {selectedTransactions.size} items</h4>
+            <input
+              type="text"
+              placeholder="Enter flag message"
+              value={bulkActionValue}
+              onChange={(e) => setBulkActionValue(e.target.value)}
+            />
+            <div className="modal-actions">
+              <button 
+                className="cancel-button" 
+                onClick={() => {
+                  setShowFlagModal(false);
+                  setBulkActionValue('');
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="save-button" 
+                onClick={handleBulkAddFlag}
+                disabled={!bulkActionValue}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <table className="transaction-table">
         <thead>
           <tr>
+            <th className="checkbox-column">
+              <div className="checkbox-container">
+                <input 
+                  type="checkbox" 
+                  checked={selectedTransactions.size === transactions.length && transactions.length > 0}
+                  ref={checkbox => {
+                    if (checkbox) {
+                      if (getSelectAllState() === 'some') {
+                        checkbox.indeterminate = true;
+                      } else {
+                        checkbox.indeterminate = false;
+                      }
+                    }
+                  }}
+                  onChange={handleSelectAll}
+                  className="table-checkbox"
+                />
+                {selectedTransactions.size > 0 && (
+                  <div className="checkbox-indicator">
+                    {getSelectAllState() === 'some' ? <Minus size={12} /> : <Check size={12} />}
+                  </div>
+                )}
+              </div>
+            </th>
             <th onClick={() => onChangeSort('datetime')}>
               Date {renderSortArrow('datetime')}
             </th>
@@ -200,20 +414,25 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         <tbody>
           {/* New Transaction Row */}
           {showNewTransactionRow && (
-            <TransactionRow
-              transaction={null}
-              isNew={true}
-              onSaveNew={handleCreateTransaction}
-              onCancel={() => setShowNewTransactionRow(false)}
-              editableFields={editableFields}
-              showNotification={showNotification}
-            />
+            <tr>
+              <td></td> {/* Empty checkbox cell for new row */}
+              <td colSpan={5}>
+                <TransactionRow
+                  transaction={null}
+                  isNew={true}
+                  onSaveNew={handleCreateTransaction}
+                  onCancel={() => setShowNewTransactionRow(false)}
+                  editableFields={editableFields}
+                  showNotification={showNotification}
+                />
+              </td>
+            </tr>
           )}
           
           {/* Loading State */}
           {isLoading ? (
             <tr className="loading-row">
-              <td colSpan={5}>
+              <td colSpan={6}>
                 <div className="loading-message">
                   <Loader2 className="spinner-icon" size={24} />
                   <span>Loading transactions...</span>
@@ -223,17 +442,28 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
           ) : transactions.length > 0 ? (
             /* Existing Transactions */
             transactions.map(transaction => (
-              <TransactionRow
-                key={transaction.id}
-                transaction={transaction}
-                onDelete={handleDeleteTransaction}
-                editableFields={editableFields}
-                showNotification={showNotification}
-              />
+              <tr key={transaction.id}>
+                <td className="checkbox-column">
+                  <input 
+                    type="checkbox" 
+                    checked={transaction.id ? selectedTransactions.has(transaction.id) : false}
+                    onChange={(e) => transaction.id && handleSelectTransaction(transaction.id, e.target.checked)}
+                    className="table-checkbox"
+                  />
+                </td>
+                <td colSpan={5}>
+                  <TransactionRow
+                    transaction={transaction}
+                    onDelete={handleDeleteTransaction}
+                    editableFields={editableFields}
+                    showNotification={showNotification}
+                  />
+                </td>
+              </tr>
             ))
           ) : (
             <tr className="no-results-row">
-              <td colSpan={5}>
+              <td colSpan={6}>
                 <div className="no-results-message">
                   {isFiltersActive() 
                     ? "No transactions match the current filters" 

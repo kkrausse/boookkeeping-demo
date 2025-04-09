@@ -174,8 +174,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
 
   return (
     <>
-      <tr className={isEditing ? 'editing-row' : ''}>
-        <td>
+      <div className={`transaction-row ${isEditing ? 'editing-row' : ''}`}>
+        <div className="transaction-cell date-cell">
           {/* Date Field */}
           <input
             type={isEditing && isFieldEditable('datetime') ? "datetime-local" : "text"}
@@ -192,8 +192,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             disabled={!isEditing || !isFieldEditable('datetime') || isPending}
             readOnly={!isEditing || !isFieldEditable('datetime')}
           />
-        </td>
-        <td>
+        </div>
+        <div className="transaction-cell amount-cell">
           {/* Amount Field */}
           <input
             type="text"
@@ -208,8 +208,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             readOnly={!isEditing || !isFieldEditable('amount')}
             className={getAmountClass(displayedTransaction.amount)}
           />
-        </td>
-        <td>
+        </div>
+        <div className="transaction-cell description-cell">
           {/* Description Field */}
           <input
             type="text"
@@ -219,8 +219,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             disabled={!isEditing || !isFieldEditable('description') || isPending}
             readOnly={!isEditing || !isFieldEditable('description')}
           />
-        </td>
-        <td>
+        </div>
+        <div className="transaction-cell category-cell">
           {/* Category Field */}
           <input
             type="text"
@@ -230,8 +230,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             disabled={!isEditing || !isFieldEditable('category') || isPending}
             readOnly={!isEditing || !isFieldEditable('category')}
           />
-        </td>
-        <td className="action-buttons">
+        </div>
+        <div className="transaction-cell action-buttons">
           {isEditing ? (
             <>
               <button
@@ -287,47 +287,45 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
               )}
             </>
           )}
-        </td>
-      </tr>
+        </div>
+      </div>
       
       {/* Details / Flags Row */}
       {expandedDetails && transaction && (
-        <tr className={`flag-details-row ${transaction.flags && transaction.flags.length > 0 ? 'has-flags' : ''}`}>
-          <td colSpan={5}>
-            <div className="flag-details">
-              <h4>Transaction Details</h4>
-              <div className="transaction-metadata">
-                <div className="metadata-item">
-                  <span className="metadata-label">Created:</span> {formatDate(transaction.created_at)}
-                </div>
-                <div className="metadata-item">
-                  <span className="metadata-label">Updated:</span> {formatDate(transaction.updated_at)}
-                </div>
-                <div className="metadata-item">
-                  <span className="metadata-label">ID:</span> {transaction.id}
-                </div>
+        <div className={`flag-details-row ${transaction.flags && transaction.flags.length > 0 ? 'has-flags' : ''}`}>
+          <div className="flag-details">
+            <h4>Transaction Details</h4>
+            <div className="transaction-metadata">
+              <div className="metadata-item">
+                <span className="metadata-label">Created:</span> {formatDate(transaction.created_at)}
               </div>
-              
-              {transaction.flags && transaction.flags.length > 0 && (
-                <>
-                  <h5>Flags</h5>
-                  <ul className="flags-list">
-                    {transaction.flags.map((flag, idx) => (
-                      <li key={idx} className="flag-item">
-                        <strong>{flag.flag_type}</strong>: {flag.message}
-                        {flag.duplicates_transaction && (
-                          <div className="duplicate-info">
-                            Duplicates Transaction ID: {flag.duplicates_transaction}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
+              <div className="metadata-item">
+                <span className="metadata-label">Updated:</span> {formatDate(transaction.updated_at)}
+              </div>
+              <div className="metadata-item">
+                <span className="metadata-label">ID:</span> {transaction.id}
+              </div>
             </div>
-          </td>
-        </tr>
+            
+            {transaction.flags && transaction.flags.length > 0 && (
+              <>
+                <h5>Flags</h5>
+                <ul className="flags-list">
+                  {transaction.flags.map((flag, idx) => (
+                    <li key={idx} className="flag-item">
+                      <strong>{flag.flag_type}</strong>: {flag.message}
+                      {flag.duplicates_transaction && (
+                        <div className="duplicate-info">
+                          Duplicates Transaction ID: {flag.duplicates_transaction}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </>
   );

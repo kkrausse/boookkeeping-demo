@@ -86,7 +86,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         
         try:
-            # Use our utility to update transaction with flags
+            # Use our utility to update transaction with flags directly
+            # The utility now handles all data conversions internally
             transaction, flags = update_transaction_with_flags(instance, request.data)
             
             # Serialize and return
@@ -99,19 +100,10 @@ class TransactionViewSet(viewsets.ModelViewSet):
         """Override partial_update to handle flags."""
         instance = self.get_object()
         
-        # For partial updates, we need to merge existing data with the update
-        data = {
-            'description': instance.description,
-            'category': instance.category,
-            'amount': instance.amount,
-            'datetime': instance.datetime
-        }
-        # Update with new data
-        data.update(request.data)
-        
         try:
-            # Use our utility to update transaction with flags
-            transaction, flags = update_transaction_with_flags(instance, data)
+            # The update_transaction_with_flags utility now handles partial updates
+            # by preserving existing values if not provided in the request data
+            transaction, flags = update_transaction_with_flags(instance, request.data)
             
             # Serialize and return
             serializer = self.get_serializer(transaction)

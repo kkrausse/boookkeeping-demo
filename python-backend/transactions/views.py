@@ -209,8 +209,8 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
             if rule_matches:
                 was_updated = False
                 
-                # Apply category if rule has one
-                if rule.category and transaction.category != rule.category:
+                # Apply category if rule has one and transaction doesn't already have a category
+                if rule.category and not transaction.category:
                     transaction.category = rule.category
                     was_updated = True
                     

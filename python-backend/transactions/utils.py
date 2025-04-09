@@ -227,8 +227,8 @@ def apply_transaction_rules(transaction_data):
         
         # Apply rule actions if all conditions match
         if rule_matches:
-            # Apply category if rule has one
-            if rule.category:
+            # Apply category if rule has one and transaction doesn't already have a category
+            if rule.category and not transaction_data.get('category'):
                 transaction_data['category'] = rule.category
                 
             # Add flag for rule match
@@ -253,25 +253,28 @@ def create_transaction_with_flags(data):
     from .models import Transaction, TransactionFlag
     
     # Validate and clean data
-    cleaned_data, flags = validate_transaction_data(data)
+    cleaned_data, validation_flags = validate_transaction_data(data)
     
-    # Apply transaction rules
+    # Apply transaction rules before creating flags
+    # This ensures rules are applied before flag checks (like duplicates)
     cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
-    flags.extend(rule_flags)
     
     # Create transaction
     transaction = Transaction(**cleaned_data)
     transaction.save()
     
+    # Combine all flags
+    all_flags = validation_flags + rule_flags
+    
     # Create flags
-    for flag_data in flags:
+    for flag_data in all_flags:
         TransactionFlag.objects.create(
             transaction=transaction,
             flag_type=flag_data['flag_type'],
             message=flag_data['message']
         )
     
-    return transaction, flags
+    return transaction, all_flags
 
 def update_transaction_with_flags(transaction, data):
     """
@@ -287,11 +290,14 @@ def update_transaction_with_flags(transaction, data):
     from .models import TransactionFlag
     
     # Validate and clean data
-    cleaned_data, flags = validate_transaction_data(data)
+    cleaned_data, validation_flags = validate_transaction_data(data)
+    
+    # Preserve existing category if one exists and no new category provided
+    if transaction.category and not cleaned_data.get('category'):
+        cleaned_data['category'] = transaction.category
     
     # Apply transaction rules
     cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
-    flags.extend(rule_flags)
     
     # Clear existing parse error, missing data, and rule match flags
     TransactionFlag.objects.filter(
@@ -304,12 +310,15 @@ def update_transaction_with_flags(transaction, data):
         setattr(transaction, key, value)
     transaction.save()
     
+    # Combine all flags
+    all_flags = validation_flags + rule_flags
+    
     # Create new flags
-    for flag_data in flags:
+    for flag_data in all_flags:
         TransactionFlag.objects.create(
             transaction=transaction,
             flag_type=flag_data['flag_type'],
             message=flag_data['message']
         )
     
-    return transaction, flags
+    return transaction, all_flags

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ActionInputs, ActionData } from './ActionInputs';
+import { Trash2 } from 'lucide-react';
 import './ActionMenu.css';
 
 export interface ActionOption {
@@ -16,6 +17,7 @@ interface ActionMenuProps {
   onActionChange?: (actionData: ActionData) => void;
   onApply?: () => void;
   onCancel?: () => void;
+  onDelete?: () => void;
   disabled?: boolean;
   customActions?: ActionOption[];
 }
@@ -27,6 +29,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
   onActionChange,
   onApply,
   onCancel,
+  onDelete,
   disabled = false,
   customActions = []
 }) => {
@@ -72,6 +75,21 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
               disabled={disabled}
             >
               Cancel
+            </button>
+          )}
+          
+          {onDelete && (
+            <button
+              className="delete-button"
+              onClick={() => {
+                if (confirm(`Are you sure you want to delete ${selectedCount} selected items?`)) {
+                  onDelete();
+                }
+              }}
+              disabled={disabled}
+              title="Delete selected items"
+            >
+              <Trash2 size={18} />
             </button>
           )}
           

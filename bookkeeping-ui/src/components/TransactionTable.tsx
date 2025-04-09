@@ -138,8 +138,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     createMutation.mutate(transaction);
   };
   
-  // State for batch update loading
+  // State for batch operations loading
   const [isBatchUpdating, setIsBatchUpdating] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   
   // Apply actions to multiple transactions using the centralized update function
   const handleBatchUpdate = async (actionData: ActionData) => {
@@ -228,6 +229,31 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     handleBatchUpdate(bulkActionData);
   };
   
+  // Handle bulk deletion of selected transactions
+  const handleBatchDelete = async () => {
+    if (selectedTransactions.size === 0 || !onDeleteTransaction) {
+      return;
+    }
+    
+    setIsBatchDeleting(true);
+    
+    try {
+      // Process each transaction deletion sequentially
+      const transactionIds = Array.from(selectedTransactions);
+      for (const id of transactionIds) {
+        await onDeleteTransaction(id);
+      }
+      
+      // Clear selection after successful deletions
+      setSelectedTransactions(new Set());
+      showNotification('success', `${transactionIds.length} transactions deleted successfully`);
+    } catch (error) {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to delete transactions');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+  
   // Determine checkbox state for header (all, none, or some selected)
   const getSelectAllState = () => {
     if (selectedTransactions.size === 0) return 'none';
@@ -297,7 +323,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
             onActionChange={handleActionChange}
             onApply={handleApplyActions}
             onCancel={() => setSelectedTransactions(new Set())}
-            disabled={isBatchUpdating}
+            onDelete={handleBatchDelete}
+            disabled={isBatchUpdating || isBatchDeleting}
           />
         )}
       </div>

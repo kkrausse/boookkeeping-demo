@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Transaction, TransactionSort, TRANSACTION_KEYS } from '../api/transactions';
+import { Transaction } from '../api/transactions';
 import { Check, X, Edit, Trash2, Info, Loader2 } from 'lucide-react';
 
 interface TransactionRowProps {
@@ -24,27 +23,16 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   editableFields = ['description', 'category', 'amount', 'datetime'],
   showNotification,
 }) => {
-  const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState<boolean>(isNew);
   const [expandedDetails, setExpandedDetails] = useState<boolean>(false);
-  // We'll use a single state for the displayed transaction data
-  // This provides a simpler optimistic update approach
-  const [displayedTransaction, setDisplayedTransaction] = useState<Partial<Transaction>>({
-    description: transaction?.description || '',
-    category: transaction?.category || '',
-    amount: transaction?.amount || '',
-    datetime: transaction?.datetime || new Date().toISOString(),
-  });
+  // For editing mode, we need to track changes before saving
+  const [editValues, setEditValues] = useState<Partial<Transaction>>({});
   
-  // Initialize with empty transaction or the provided transaction when entering edit mode
+  // Reset edit values when transaction changes or when entering edit mode
   useEffect(() => {
     if (isNew || isEditing) {
-      setDisplayedTransaction({
-        description: transaction?.description || '',
-        category: transaction?.category || '',
-        amount: transaction?.amount || '',
-        datetime: transaction?.datetime || new Date().toISOString(),
-      });
+      // Start with a clean slate when entering edit mode
+      setEditValues({});
     }
   }, [isNew, isEditing, transaction]);
 
@@ -57,38 +45,40 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
 
   const handleSave = async () => {
     if (isNew && onSaveNew) {
-      onSaveNew(displayedTransaction);
+      // For new transactions, combine default values with edited values
+      const newTransaction: Partial<Transaction> = {
+        description: '',
+        category: '',
+        amount: '',
+        datetime: new Date().toISOString(),
+        ...editValues
+      };
+      onSaveNew(newTransaction);
       return;
     }
     
-    if (transaction && onUpdateTransaction) {
+    if (transaction && onUpdateTransaction && Object.keys(editValues).length > 0) {
       setIsUpdating(true);
       try {
-        // Use the centralized update function from props
+        // Only update with the fields that changed
         await onUpdateTransaction({
           id: transaction.id,
-          ...displayedTransaction,
+          ...editValues,
         });
         
         // On success
-        showNotification('success', 'Transaction updated successfully');
         setIsEditing(false);
       } catch (error) {
         // On error
         showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
-        
-        // Reset to original transaction data
-        if (transaction) {
-          setDisplayedTransaction({
-            description: transaction.description || '',
-            category: transaction.category || '',
-            amount: transaction.amount || '',
-            datetime: transaction.datetime || new Date().toISOString(),
-          });
-        }
       } finally {
         setIsUpdating(false);
+        // Clear edit values after update
+        setEditValues({});
       }
+    } else {
+      // No changes to save
+      setIsEditing(false);
     }
   };
 
@@ -98,15 +88,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
       return;
     }
     
-    // Reset to original transaction data
-    if (transaction) {
-      setDisplayedTransaction({
-        description: transaction.description || '',
-        category: transaction.category || '',
-        amount: transaction.amount || '',
-        datetime: transaction.datetime || new Date().toISOString(),
-      });
-    }
+    // Clear edit values and exit edit mode
+    setEditValues({});
     setIsEditing(false);
   };
 
@@ -119,7 +102,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   };
 
   const handleInputChange = (field: keyof Transaction, value: string) => {
-    setDisplayedTransaction(prev => ({
+    setEditValues(prev => ({
       ...prev,
       [field]: value
     }));
@@ -154,15 +137,23 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     return parseFloat(amount) < 0 ? 'negative-amount' : 'positive-amount';
   };
 
-  // Determine if a new record has required fields filled out
+  // Determine if save button should be enabled
   const isSaveEnabled = () => {
     // For new records, require at least description or amount
     if (isNew) {
-      return Boolean(displayedTransaction.description?.trim() || 
-        (displayedTransaction.amount !== undefined && displayedTransaction.amount !== ''));
+      const hasDescription = Boolean(
+        editValues.description?.trim() || 
+        (transaction?.description && !editValues.hasOwnProperty('description'))
+      );
+      const hasAmount = Boolean(
+        (editValues.amount !== undefined && editValues.amount !== '') || 
+        (transaction?.amount && !editValues.hasOwnProperty('amount'))
+      );
+      return hasDescription || hasAmount;
     }
-    // For existing records, always enable save
-    return true;
+    
+    // For existing records, enable only if there are actual changes
+    return Object.keys(editValues).length > 0;
   };
 
   const isPending = isUpdating;
@@ -176,9 +167,9 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             type={isEditing && isFieldEditable('datetime') ? "datetime-local" : "text"}
             value={
               isEditing && isFieldEditable('datetime') 
-                ? new Date(displayedTransaction.datetime || new Date().toISOString())
+                ? new Date(editValues.datetime || transaction?.datetime || new Date().toISOString())
                     .toISOString().slice(0, 16)
-                : isNew ? '' : formatDate(displayedTransaction.datetime)
+                : isNew ? '' : formatDate(transaction?.datetime)
             }
             placeholder={isNew ? "Date" : ""}
             onChange={(e) => handleInputChange('datetime', 
@@ -194,21 +185,25 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             type="text"
             value={
               isEditing && isFieldEditable('amount') 
-                ? displayedTransaction.amount || ''
-                : isNew ? '' : formatAmount(displayedTransaction.amount)
+                ? editValues.amount !== undefined ? editValues.amount : transaction?.amount || ''
+                : isNew ? '' : formatAmount(transaction?.amount)
             }
             placeholder={isNew ? "Amount" : ""}
             onChange={(e) => handleInputChange('amount', e.target.value)}
             disabled={!isEditing || !isFieldEditable('amount') || isPending}
             readOnly={!isEditing || !isFieldEditable('amount')}
-            className={getAmountClass(displayedTransaction.amount)}
+            className={getAmountClass(isEditing ? editValues.amount || transaction?.amount : transaction?.amount)}
           />
         </div>
         <div className="transaction-cell description-cell">
           {/* Description Field */}
           <input
             type="text"
-            value={displayedTransaction.description || ''}
+            value={
+              isEditing && isFieldEditable('description')
+                ? editValues.description !== undefined ? editValues.description : transaction?.description || ''
+                : isNew ? '' : transaction?.description || ''
+            }
             placeholder={isNew ? "Description" : ""}
             onChange={(e) => handleInputChange('description', e.target.value)}
             disabled={!isEditing || !isFieldEditable('description') || isPending}
@@ -219,7 +214,11 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
           {/* Category Field */}
           <input
             type="text"
-            value={displayedTransaction.category || ''}
+            value={
+              isEditing && isFieldEditable('category')
+                ? editValues.category !== undefined ? editValues.category : transaction?.category || ''
+                : isNew ? '' : transaction?.category || ''
+            }
             placeholder={isNew ? "Category" : ""}
             onChange={(e) => handleInputChange('category', e.target.value)}
             disabled={!isEditing || !isFieldEditable('category') || isPending}

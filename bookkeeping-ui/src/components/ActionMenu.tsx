@@ -15,6 +15,7 @@ interface ActionMenuProps {
   selectedCount?: number;
   onActionChange?: (actionData: ActionData) => void;
   onApply?: () => void;
+  onCancel?: () => void;
   disabled?: boolean;
   customActions?: ActionOption[];
 }
@@ -25,6 +26,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
   selectedCount = 0,
   onActionChange,
   onApply,
+  onCancel,
   disabled = false,
   customActions = []
 }) => {
@@ -60,6 +62,16 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
               disabled={disabled}
             >
               Apply
+            </button>
+          )}
+          
+          {onCancel && (
+            <button
+              className="cancel-button"
+              onClick={onCancel}
+              disabled={disabled}
+            >
+              Cancel
             </button>
           )}
           

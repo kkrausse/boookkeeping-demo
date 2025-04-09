@@ -15,11 +15,10 @@
   gap: 12px;
 }
 
-/* Inline mode styles for horizontal display */
+/* Even in inline mode, we always stack the options vertically */
 .action-inputs.inline .action-options {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .action-option {

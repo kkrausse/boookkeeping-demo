@@ -162,7 +162,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         
         // Apply the update if we have a category change
         if (actionData.category) {
-          const result = await updateTransaction({...transaction, ...update });
+          const result = await updateTransaction({ ...transaction, ...update });
           results.push(result);
         }
       }

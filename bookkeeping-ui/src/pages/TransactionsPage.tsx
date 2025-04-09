@@ -205,10 +205,26 @@ export function TransactionsPage() {
   const handleCreateTransaction = async (newTransaction: Partial<Transaction>) => {
     return createTransaction(newTransaction);
   };
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteTransaction,
+    onMutate: async (id: number) => {
+      queryClient.setQueryData<PaginatedResponse<Transaction>>(
+        TRANSACTION_KEYS.paginated(queryParams),
+        old => {
+          if (!old) return old;
+          return {
+            ...old,
+            results: old.results.filter(tx => tx.id !== id)
+          };
+        }
+      );
+    }
+  });
   
   // Delete a transaction
   const handleDeleteTransaction = async (id: number) => {
-    await deleteTransaction(id);
+    await deleteMutation.mutateAsync(id);
     return id;
   };
   
@@ -229,7 +245,7 @@ export function TransactionsPage() {
       await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
       
       // Optimistically update to the new value
-      if (previousData) {
+      if (transactions) {
         queryClient.setQueryData<PaginatedResponse<Transaction>>(
           TRANSACTION_KEYS.paginated(queryParams),
           old => {

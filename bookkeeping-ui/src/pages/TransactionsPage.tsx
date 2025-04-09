@@ -199,7 +199,8 @@ export function TransactionsPage() {
     queryFn: () => fetchTransactions(queryParams).then(r => r.data),
     placeholderData: keepPreviousData
   });
-  
+
+  const transactions: Transaction[] = data?.results || [];
   // Create a new transaction
   const handleCreateTransaction = async (newTransaction: Partial<Transaction>) => {
     return createTransaction(newTransaction);
@@ -213,8 +214,9 @@ export function TransactionsPage() {
   
   // Create transaction update mutation
   const updateMutation = useMutation({
-    mutationFn: (transaction: Partial<Transaction> & { id: number }) => {
-      return updateTransaction(transaction);
+    mutationFn: (update: Partial<Transaction> & { id: number }) => {
+      const old = transactions.find(t => t.id === update.id);
+      return updateTransaction({ ...old, ...update});
     },
     onMutate: async (updatedTransaction) => {
 
@@ -232,9 +234,6 @@ export function TransactionsPage() {
           TRANSACTION_KEYS.paginated(queryParams),
           old => {
             if (!old) return old;
-            console.log('replace mut', old.results.map(tx =>
-                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
-                                                      ));
             return {
               ...old,
               results: old.results.map(tx => 
@@ -311,7 +310,6 @@ export function TransactionsPage() {
 
   if (error) return <div className="error-message">Error: {error.message}</div>;
 
-  const transactions: Transaction[] = data?.results || [];
   const totalCount = data?.count || 0;
   const hasNextPage = !!data?.next;
 

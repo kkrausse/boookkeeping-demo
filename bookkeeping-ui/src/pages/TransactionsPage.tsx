@@ -211,61 +211,61 @@ export function TransactionsPage() {
     return id;
   };
   
-  // Update a transaction with optimistic updates
-  const handleUpdateTransaction = async (transaction: Partial<Transaction> & { id: number }) => {
-    // Get current data for rollback if needed
-    const currentData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
-      TRANSACTION_KEYS.paginated(queryParams)
-    );
+  // Create transaction update mutation
+  const updateMutation = useMutation({
+    mutationFn: (transaction: Partial<Transaction> & { id: number }) => {
+      return updateTransaction(transaction);
+    },
+    onMutate: async (updatedTransaction) => {
 
-    // Optimistically update the cache
-    if (currentData) {
-      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
-      queryClient.setQueryData<PaginatedResponse<Transaction>>(
-        TRANSACTION_KEYS.paginated(queryParams),
-        oldData => {
-
-          if (!oldData) return oldData;
-
-          console.log('new results', oldData.results.map(tx =>
-              tx.id === transaction.id ? { ...tx, ...transaction } : tx
-            ))
-
-          return {
-            ...oldData,
-            results: oldData.results.map(tx => 
-              tx.id === transaction.id ? { ...tx, ...transaction } : tx
-            )
-          };
-        }
+      // Snapshot the previous value
+      const previousData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
+        TRANSACTION_KEYS.paginated(queryParams)
       );
-    }
-    
-    try {
-      // Make the API call
-      const result = await updateTransaction(transaction);
+
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
       
-      // On success
-      showNotification('success', 'Transaction updated successfully');
-      
-      // Invalidate query to ensure data consistency
-      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
-      
-      return result;
-    } catch (error) {
-      // On error, rollback the optimistic update
-      if (currentData) {
-        queryClient.setQueryData(
-          TRANSACTION_KEYS.paginated(queryParams), 
-          currentData
+      // Optimistically update to the new value
+      if (previousData) {
+        queryClient.setQueryData<PaginatedResponse<Transaction>>(
+          TRANSACTION_KEYS.paginated(queryParams),
+          old => {
+            if (!old) return old;
+            console.log('replace mut', old.results.map(tx =>
+                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
+                                                      ));
+            return {
+              ...old,
+              results: old.results.map(tx => 
+                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
+              )
+            };
+          }
         );
       }
       
-      // Show error notification
+      return { previousData };
+    },
+    onSuccess: () => {
+      showNotification('success', 'Transaction updated successfully');
+      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
+    },
+    onError: (error, _, context) => {
+      // Roll back to the previous value if there was an error
+      if (context?.previousData) {
+        queryClient.setQueryData(
+          TRANSACTION_KEYS.paginated(queryParams), 
+          context.previousData
+        );
+      }
       showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
-      
-      throw error;
     }
+  });
+  
+  // Simple wrapper function to expose the mutation
+  const handleUpdateTransaction = async (transaction: Partial<Transaction> & { id: number }) => {
+    return updateMutation.mutateAsync(transaction);
   };
 
   // Handle pagination

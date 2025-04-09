@@ -1,4 +1,11 @@
 import axios from 'axios';
+import {
+  QueryClient,
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 
 const api = axios.create({
   baseURL: '/api', //import.meta.env.VITE_API_URL, // Loaded from .env
@@ -48,10 +55,100 @@ export async function createTransaction(transaction: Partial<Transaction>): Prom
   return response.data;
 }
 
+// Centralized update function that handles API call and optimistic updates
 export async function updateTransaction(transaction: Partial<Transaction> & { id: number }): Promise<Transaction> {
   // DRF ModelViewSet supports PUT requests by default even with commented update method
   const response = await api.put(`/transactions/${transaction.id}/`, transaction);
   return response.data;
+}
+
+// Helper function for using React Query to update a transaction with optimistic updates
+export function useTransactionUpdate() {
+  const queryClient = useQueryClient();
+  
+  return {
+    updateTransaction: async (
+      transaction: Partial<Transaction> & { id: number },
+      options?: {
+        onSuccess?: (data: Transaction) => void;
+        onError?: (error: Error) => void;
+      }
+    ) => {
+      // Store the previous data for rollback if needed
+      const previousData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
+        TRANSACTION_KEYS.all
+      );
+      
+      // Optimistically update the cache
+      if (previousData) {
+        queryClient.setQueryData<PaginatedResponse<Transaction>>(
+          TRANSACTION_KEYS.all,
+          oldData => {
+            if (!oldData) return oldData;
+            
+            return {
+              ...oldData,
+              results: oldData.results.map(tx => 
+                tx.id === transaction.id ? { ...tx, ...transaction } : tx
+              )
+            };
+          }
+        );
+        
+        // Also update any paginated queries
+        const paginatedQueries = queryClient.getQueriesData<PaginatedResponse<Transaction>>({
+          queryKey: ['transactions', 'paginated']
+        });
+        
+        paginatedQueries.forEach(([queryKey, data]) => {
+          if (data) {
+            queryClient.setQueryData(queryKey, {
+              ...data,
+              results: data.results.map(tx => 
+                tx.id === transaction.id ? { ...tx, ...transaction } : tx
+              )
+            });
+          }
+        });
+      }
+      
+      try {
+        // Make the API call
+        const result = await updateTransaction(transaction);
+        
+        // Invalidate queries to ensure data consistency
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        
+        // Call success callback if provided
+        if (options?.onSuccess) {
+          options.onSuccess(result);
+        }
+        
+        return result;
+      } catch (error) {
+        // Rollback on error (revert optimistic update)
+        if (previousData) {
+          queryClient.setQueryData(TRANSACTION_KEYS.all, previousData);
+          
+          // Revert paginated queries too
+          const paginatedQueries = queryClient.getQueriesData({
+            queryKey: ['transactions', 'paginated']
+          });
+          
+          paginatedQueries.forEach(([queryKey]) => {
+            queryClient.invalidateQueries({ queryKey: queryKey as any });
+          });
+        }
+        
+        // Call error callback if provided
+        if (options?.onError && error instanceof Error) {
+          options.onError(error);
+        }
+        
+        throw error;
+      }
+    }
+  };
 }
 
 export interface PaginatedResponse<T> {

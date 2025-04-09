@@ -13,6 +13,7 @@ import {
   fetchTransactions, 
   deleteTransaction, 
   createTransaction,
+  updateTransaction,
   uploadCSV, 
   TRANSACTION_KEYS,
   TransactionSort,
@@ -209,6 +210,63 @@ export function TransactionsPage() {
     await deleteTransaction(id);
     return id;
   };
+  
+  // Update a transaction with optimistic updates
+  const handleUpdateTransaction = async (transaction: Partial<Transaction> & { id: number }) => {
+    // Get current data for rollback if needed
+    const currentData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
+      TRANSACTION_KEYS.paginated(queryParams)
+    );
+
+    // Optimistically update the cache
+    if (currentData) {
+      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
+      queryClient.setQueryData<PaginatedResponse<Transaction>>(
+        TRANSACTION_KEYS.paginated(queryParams),
+        oldData => {
+
+          if (!oldData) return oldData;
+
+          console.log('new results', oldData.results.map(tx =>
+              tx.id === transaction.id ? { ...tx, ...transaction } : tx
+            ))
+
+          return {
+            ...oldData,
+            results: oldData.results.map(tx => 
+              tx.id === transaction.id ? { ...tx, ...transaction } : tx
+            )
+          };
+        }
+      );
+    }
+    
+    try {
+      // Make the API call
+      const result = await updateTransaction(transaction);
+      
+      // On success
+      showNotification('success', 'Transaction updated successfully');
+      
+      // Invalidate query to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
+      
+      return result;
+    } catch (error) {
+      // On error, rollback the optimistic update
+      if (currentData) {
+        queryClient.setQueryData(
+          TRANSACTION_KEYS.paginated(queryParams), 
+          currentData
+        );
+      }
+      
+      // Show error notification
+      showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
+      
+      throw error;
+    }
+  };
 
   // Handle pagination
   const handlePageForward = () => {
@@ -357,6 +415,7 @@ export function TransactionsPage() {
         isLoading: isLoading,
         onCreateTransaction: handleCreateTransaction,
         onDeleteTransaction: handleDeleteTransaction,
+        onUpdateTransaction: handleUpdateTransaction,
         filters: filters,
         onFilterChange: handleFilterChange,
         csvUploadButton: <CsvUpload buttonOnly showNotification={showNotification} />

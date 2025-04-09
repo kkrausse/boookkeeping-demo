@@ -5,8 +5,7 @@ import {
   TransactionSort, 
   TransactionSortColumn, 
   TRANSACTION_KEYS, 
-  FilterParams,
-  updateTransaction
+  FilterParams
 } from '../api/transactions';
 import { Plus, Filter, Loader2, Tag, Flag, Minus, Check } from 'lucide-react';
 import { TransactionRow } from './TransactionRow';
@@ -29,10 +28,12 @@ interface TransactionTableProps {
     isLoading: boolean;
     onCreateTransaction?: (transaction: Partial<Transaction>) => Promise<any>;
     onDeleteTransaction?: (id: number) => Promise<any>;
+    onUpdateTransaction?: (transaction: Partial<Transaction> & { id: number }) => Promise<any>;
     editableFields?: Array<keyof Transaction>;
     filters: FilterParams;
     onFilterChange: (filters: FilterParams) => void;
     csvUploadButton?: React.ReactNode; // Additional prop for CSV upload button
+    onRefresh?: () => void; // Function to force refresh data
   }
 }
 
@@ -48,10 +49,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     isLoading,
     onCreateTransaction,
     onDeleteTransaction,
+    onUpdateTransaction,
     editableFields = ['description', 'category', 'amount', 'datetime'],
     filters,
     onFilterChange,
-    csvUploadButton
+    csvUploadButton,
+    onRefresh
   } = tableProps;
 
   const queryClient = useQueryClient();
@@ -135,11 +138,17 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     createMutation.mutate(transaction);
   };
   
-  // Batch update mutation for applying actions to multiple transactions
-  const batchUpdateMutation = useMutation({
-    mutationFn: async (actionData: ActionData) => {
-      const transactionIds = Array.from(selectedTransactions);
-      
+  // State for batch update loading
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
+  
+  // Apply actions to multiple transactions using the centralized update function
+  const handleBatchUpdate = async (actionData: ActionData) => {
+    if (!onUpdateTransaction) return;
+    
+    const transactionIds = Array.from(selectedTransactions);
+    setIsBatchUpdating(true);
+    
+    try {
       // Process each transaction sequentially
       const results = [];
       for (const id of transactionIds) {
@@ -162,25 +171,21 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         
         // Apply the update if we have a category change
         if (actionData.category) {
-          const result = await updateTransaction({ ...transaction, ...update });
+          const result = await onUpdateTransaction({ ...transaction, ...update });
           results.push(result);
         }
       }
       
-      return results;
-    },
-    onSuccess: () => {
       // Clear selection after successful update
       setSelectedTransactions(new Set());
       setBulkActionData({});
       showNotification('success', 'Selected transactions updated successfully');
-      // Refresh transaction data
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    },
-    onError: (error) => {
+    } catch (error) {
       showNotification('error', error instanceof Error ? error.message : 'Failed to update transactions');
+    } finally {
+      setIsBatchUpdating(false);
     }
-  });
+  };
   
   // Selection handlers
   const handleSelectAll = () => {
@@ -219,8 +224,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
       return;
     }
     
-    // Apply the actions to selected transactions
-    batchUpdateMutation.mutate(bulkActionData);
+    // Apply the actions to selected transactions using our centralized approach
+    handleBatchUpdate(bulkActionData);
   };
   
   // Determine checkbox state for header (all, none, or some selected)
@@ -292,7 +297,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
             onActionChange={handleActionChange}
             onApply={handleApplyActions}
             onCancel={() => setSelectedTransactions(new Set())}
-            disabled={batchUpdateMutation.isPending}
+            disabled={isBatchUpdating}
           />
         )}
       </div>
@@ -382,6 +387,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
                   <TransactionRow
                     transaction={transaction}
                     onDelete={handleDeleteTransaction}
+                    onUpdateTransaction={onUpdateTransaction}
                     editableFields={editableFields}
                     showNotification={showNotification}
                   />

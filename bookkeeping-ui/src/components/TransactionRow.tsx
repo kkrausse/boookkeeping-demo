@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Transaction, TransactionSort, TRANSACTION_KEYS, updateTransaction } from '../api/transactions';
+import { useQueryClient } from '@tanstack/react-query';
+import { Transaction, TransactionSort, TRANSACTION_KEYS } from '../api/transactions';
 import { Check, X, Edit, Trash2, Info, Loader2 } from 'lucide-react';
 
 interface TransactionRowProps {
@@ -9,6 +9,7 @@ interface TransactionRowProps {
   onSaveNew?: (transaction: Partial<Transaction>) => void;
   onCancel?: () => void;
   onDelete?: (id: number) => void;
+  onUpdateTransaction?: (transaction: Partial<Transaction> & { id: number }) => Promise<any>;
   editableFields?: Array<keyof Transaction>;
   showNotification: (type: 'success' | 'error', message: string) => void;
 }
@@ -19,6 +20,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   onSaveNew,
   onCancel,
   onDelete,
+  onUpdateTransaction,
   editableFields = ['description', 'category', 'amount', 'datetime'],
   showNotification,
 }) => {
@@ -46,54 +48,47 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     }
   }, [isNew, isEditing, transaction]);
 
-  // Update transaction mutation
-  const updateMutation = useMutation({
-    mutationFn: (updatedTransaction: Partial<Transaction> & { id: number }) => {
-      return updateTransaction(updatedTransaction);
-    },
-    onSuccess: () => {
-      // Show success notification
-      showNotification('success', 'Transaction updated successfully');
-      
-      // Exit editing mode but keep our optimistic changes
-      setIsEditing(false);
-      
-      // Refresh data to ensure consistency with server
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    },
-    onError: (error) => {
-      // Show error notification
-      showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
-      
-      // Reset to original transaction data
-      if (transaction) {
-        setDisplayedTransaction({
-          description: transaction.description || '',
-          category: transaction.category || '',
-          amount: transaction.amount || '',
-          datetime: transaction.datetime || new Date().toISOString(),
-        });
-      }
-      setIsEditing(false);
-    }
-  });
+  // Track loading state for update operations
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const handleEdit = () => {
     setIsEditing(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isNew && onSaveNew) {
       onSaveNew(displayedTransaction);
       return;
     }
     
-    if (transaction) {
-      // For updates, apply changes immediately for optimistic update
-      updateMutation.mutate({
-        id: transaction.id,
-        ...displayedTransaction,
-      });
+    if (transaction && onUpdateTransaction) {
+      setIsUpdating(true);
+      try {
+        // Use the centralized update function from props
+        await onUpdateTransaction({
+          id: transaction.id,
+          ...displayedTransaction,
+        });
+        
+        // On success
+        showNotification('success', 'Transaction updated successfully');
+        setIsEditing(false);
+      } catch (error) {
+        // On error
+        showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
+        
+        // Reset to original transaction data
+        if (transaction) {
+          setDisplayedTransaction({
+            description: transaction.description || '',
+            category: transaction.category || '',
+            amount: transaction.amount || '',
+            datetime: transaction.datetime || new Date().toISOString(),
+          });
+        }
+      } finally {
+        setIsUpdating(false);
+      }
     }
   };
 
@@ -170,7 +165,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     return true;
   };
 
-  const isPending = updateMutation.isPending;
+  const isPending = isUpdating;
 
   return (
     <>

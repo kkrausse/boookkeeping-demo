@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FilterParams, TransactionRule, createTransactionRule } from '../api/transactions';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Check, Save, Loader2 } from 'lucide-react';
+import { ActionInputs, ActionData } from './ActionInputs';
 import './FilterPanel.css';
 
 type AmountComparisonType = 'above' | 'below' | 'equal' | '';
@@ -14,19 +15,7 @@ type FilterPanelProps = {
   showNotification: (type: 'success' | 'error', message: string) => void;
 };
 
-// Define a type for rule options
-interface RuleOption {
-  id: string;
-  label: string;
-  checked: boolean;
-  value?: string;
-}
-
-// Define the rules data we'll collect
-interface RuleData {
-  category?: string;
-  flagMessage?: string;
-}
+// We're using ActionData from ActionInputs component
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
   filters,
@@ -44,10 +33,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
   // Rule creation state
   const [isAddingRule, setIsAddingRule] = useState(false);
-  const [ruleOptions, setRuleOptions] = useState<RuleOption[]>([
-    { id: 'category', label: 'Add Category', checked: false, value: '' },
-    { id: 'flag', label: 'Add Flag', checked: false, value: '' }
-  ]);
+  const [actionData, setActionData] = useState<ActionData>({});
 
   // Update local filters when props change
   useEffect(() => {
@@ -85,31 +71,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Toggle rule creation mode
   const toggleRuleCreation = () => {
     setIsAddingRule(!isAddingRule);
-    // Reset rule options when toggling
+    // Reset action data when toggling
     if (!isAddingRule) {
-      setRuleOptions([
-        { id: 'category', label: 'Add Category', checked: false, value: '' },
-        { id: 'flag', label: 'Add Flag', checked: false, value: '' }
-      ]);
+      setActionData({});
     }
   };
 
-  // Handle changes to rule options
-  const handleRuleOptionChange = (id: string, checked: boolean) => {
-    setRuleOptions(prev => 
-      prev.map(option => 
-        option.id === id ? { ...option, checked } : option
-      )
-    );
-  };
-
-  // Handle changes to rule option values
-  const handleRuleValueChange = (id: string, value: string) => {
-    setRuleOptions(prev => 
-      prev.map(option => 
-        option.id === id ? { ...option, value } : option
-      )
-    );
+  // Handle changes to action inputs
+  const handleActionChange = (newActionData: ActionData) => {
+    setActionData(newActionData);
   };
 
   // Create rule mutation
@@ -121,10 +91,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       
       // Reset rule creation state
       setIsAddingRule(false);
-      setRuleOptions([
-        { id: 'category', label: 'Add Category', checked: false, value: '' },
-        { id: 'flag', label: 'Add Flag', checked: false, value: '' }
-      ]);
+      setActionData({});
       
       // Invalidate rules queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['rules'] });
@@ -143,20 +110,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       filter_description: localFilters.description || undefined,
       filter_amount_value: localFilters.amountValue || undefined,
       filter_amount_comparison: localFilters.amountComparison || undefined,
+      // Add rule actions from actionData
+      category: actionData.category,
+      flag_message: actionData.flagMessage
     };
-    
-    // Add rule actions from the checked options
-    ruleOptions.forEach(option => {
-      if (option.checked && option.value) {
-        if (option.id === 'category') {
-          ruleData.category = option.value;
-        } else if (option.id === 'flag') {
-          ruleData.flag_message = option.value;
-        }
-      }
-    });
 
-    // Check if we have at least one rule option selected
+    // Check if we have at least one rule action selected
     if (!ruleData.category && !ruleData.flag_message) {
       showNotification('error', 'Please select at least one rule action (category or flag)');
       return;
@@ -287,38 +246,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           <div className="rule-section">
             <h4>2. Define Actions to Apply</h4>
             <p className="rule-section-description">Specify what should happen when a transaction matches:</p>
-            <div className="rule-options">
-              {ruleOptions.map(option => (
-                <div key={option.id} className="rule-option">
-                  <div className="rule-option-header">
-                    <label className="rule-checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={option.checked}
-                        onChange={(e) => handleRuleOptionChange(option.id, e.target.checked)}
-                      />
-                      {option.label}
-                    </label>
-                  </div>
-                  {option.checked && (
-                    <input
-                      type="text"
-                      value={option.value || ''}
-                      onChange={(e) => handleRuleValueChange(option.id, e.target.value)}
-                      placeholder={option.id === 'category' ? "Enter category name" : "Enter flag message"}
-                      className="rule-input"
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
+            <ActionInputs
+              onActionChange={handleActionChange}
+              showTitle={false}
+              disabled={createRuleMutation.isPending}
+            />
           </div>
           
           <div className="rule-actions">
             <button 
               className="create-rule-button"
               onClick={handleCreateRule}
-              disabled={createRuleMutation.isPending || !ruleOptions.some(option => option.checked && option.value)}
+              disabled={createRuleMutation.isPending || (!actionData.category && !actionData.flagMessage)}
             >
               {createRuleMutation.isPending ? (
                 <>

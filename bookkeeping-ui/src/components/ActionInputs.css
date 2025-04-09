@@ -1,0 +1,75 @@
+.action-inputs {
+  width: 100%;
+}
+
+.action-inputs h4 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 16px;
+  color: #333;
+}
+
+.action-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Inline mode styles for horizontal display */
+.action-inputs.inline .action-options {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.action-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-option-header {
+  display: flex;
+  align-items: center;
+}
+
+.action-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+}
+
+.action-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.action-input {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  width: 100%;
+  max-width: 250px;
+}
+
+.action-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+/* Disabled styles */
+.action-checkbox-label input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}

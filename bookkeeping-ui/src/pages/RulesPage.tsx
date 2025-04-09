@@ -17,6 +17,7 @@ import {
   PaginatedResponse
 } from '../api/transactions';
 import { Edit, Trash2, Plus, Loader2, Play, PlayCircle } from 'lucide-react';
+import { ActionInputs, ActionData } from '../components/ActionInputs';
 import '../components/TransactionTable.css';
 
 // Helper component for rule action rendering
@@ -331,29 +332,30 @@ export function RulesPage() {
             
             <div className="form-section">
               <h4>Rule Actions</h4>
-              <div className="form-row">
-                <label>
-                  Set Category:
-                  <input 
-                    type="text"
-                    value={editingRule?.category || newRule.category || ''}
-                    onChange={(e) => handleFormChange('category', e.target.value)}
-                    placeholder="Enter category name"
-                  />
-                </label>
-              </div>
-              
-              <div className="form-row">
-                <label>
-                  Add Flag:
-                  <input 
-                    type="text"
-                    value={editingRule?.flag_message || newRule.flag_message || ''}
-                    onChange={(e) => handleFormChange('flag_message', e.target.value)}
-                    placeholder="Enter flag message"
-                  />
-                </label>
-              </div>
+              <ActionInputs
+                onActionChange={(actionData) => {
+                  // Update rule data when actions change
+                  if (editingRule) {
+                    setEditingRule({
+                      ...editingRule,
+                      category: actionData.category,
+                      flag_message: actionData.flagMessage
+                    });
+                  } else {
+                    setNewRule({
+                      ...newRule,
+                      category: actionData.category,
+                      flag_message: actionData.flagMessage
+                    });
+                  }
+                }}
+                initialData={{
+                  category: editingRule?.category || newRule.category || '',
+                  flagMessage: editingRule?.flag_message || newRule.flag_message || ''
+                }}
+                showTitle={false}
+                disabled={isPending}
+              />
             </div>
             
             <div className="form-actions">

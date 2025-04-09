@@ -31,19 +31,28 @@
   white-space: nowrap;
 }
 
-.action-buttons {
+.action-menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.action-menu-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 8px;
 }
 
-.action-button {
+.action-button, .apply-button {
   background-color: white;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   padding: 6px 10px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   font-size: 13px;
   cursor: pointer;
@@ -52,18 +61,26 @@
   white-space: nowrap;
 }
 
+.apply-button {
+  background-color: #4a90e2;
+  color: white;
+  border-color: #4a90e2;
+  font-weight: 500;
+  padding: 8px 16px;
+}
+
 .action-button:hover:not(:disabled) {
   background-color: #f0f0f0;
   border-color: #c0c0c0;
 }
 
-.action-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.apply-button:hover:not(:disabled) {
+  background-color: #3a7bc8;
 }
 
-.action-button svg {
-  color: #555;
+.action-button:disabled, .apply-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @keyframes slideDown {

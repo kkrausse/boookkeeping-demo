@@ -1,11 +1,10 @@
-import React from 'react';
-import { Tag, Flag } from 'lucide-react';
+import React, { useState } from 'react';
+import { ActionInputs, ActionData } from './ActionInputs';
 import './ActionMenu.css';
 
 export interface ActionOption {
   key: string;
   label: string;
-  icon: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
 }
@@ -14,8 +13,9 @@ interface ActionMenuProps {
   visible: boolean;
   position?: 'top' | 'right';
   selectedCount?: number;
-  onCategoryAction?: () => void;
-  onFlagAction?: () => void;
+  onActionChange?: (actionData: ActionData) => void;
+  onApply?: () => void;
+  disabled?: boolean;
   customActions?: ActionOption[];
 }
 
@@ -23,32 +23,19 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
   visible, 
   position = 'top', 
   selectedCount = 0,
-  onCategoryAction,
-  onFlagAction,
+  onActionChange,
+  onApply,
+  disabled = false,
   customActions = []
 }) => {
   if (!visible) return null;
-
-  // Default actions for most cases
-  const defaultActions: ActionOption[] = [
-    {
-      key: 'set-category',
-      label: 'Set Category',
-      icon: <Tag size={16} />,
-      onClick: () => onCategoryAction && onCategoryAction(),
-      disabled: !onCategoryAction
-    },
-    {
-      key: 'add-flag',
-      label: 'Add Flag',
-      icon: <Flag size={16} />,
-      onClick: () => onFlagAction && onFlagAction(),
-      disabled: !onFlagAction
+  
+  // Handle action changes
+  const handleActionChange = (actionData: ActionData) => {
+    if (onActionChange) {
+      onActionChange(actionData);
     }
-  ];
-
-  // Combine default and custom actions
-  const actions = [...defaultActions, ...customActions];
+  };
 
   return (
     <div className={`action-menu ${position}`}>
@@ -57,19 +44,37 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
           {selectedCount} items selected
         </div>
       )}
-      <div className="action-buttons">
-        {actions.map(action => (
-          <button
-            key={action.key}
-            className="action-button"
-            onClick={action.onClick}
-            disabled={action.disabled}
-            title={action.label}
-          >
-            {action.icon}
-            <span>{action.label}</span>
-          </button>
-        ))}
+      
+      <div className="action-menu-content">
+        <ActionInputs 
+          onActionChange={handleActionChange} 
+          inline={true}
+          disabled={disabled}
+        />
+        
+        <div className="action-menu-buttons">
+          {onApply && (
+            <button
+              className="apply-button"
+              onClick={onApply}
+              disabled={disabled}
+            >
+              Apply
+            </button>
+          )}
+          
+          {customActions.map(action => (
+            <button
+              key={action.key}
+              className="action-button"
+              onClick={action.onClick}
+              disabled={action.disabled || disabled}
+              title={action.label}
+            >
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import { Plus, Filter, Loader2, Tag, Flag, Minus, Check } from 'lucide-react';
 import { TransactionRow } from './TransactionRow';
 import { FilterPanel } from './FilterPanel';
 import { ActionMenu } from './ActionMenu';
+import { ActionData } from './ActionInputs';
 import './TransactionTable.css';
 
 type AmountComparisonType = 'above' | 'below' | 'equal' | '';
@@ -60,9 +61,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
   
   // Selection state
   const [selectedTransactions, setSelectedTransactions] = useState<Set<number>>(new Set());
-  const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
-  const [showFlagModal, setShowFlagModal] = useState<boolean>(false);
-  const [bulkActionValue, setBulkActionValue] = useState<string>('');
+  const [bulkActionData, setBulkActionData] = useState<ActionData>({});
   
   const isFiltersActive = () => {
     return filters.description !== '' || 
@@ -136,14 +135,10 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     createMutation.mutate(transaction);
   };
   
-  // Batch update mutation for applying category or flag to multiple transactions
+  // Batch update mutation for applying actions to multiple transactions
   const batchUpdateMutation = useMutation({
-    mutationFn: async (updates: { 
-      transactionIds: number[], 
-      updateType: 'category' | 'flag', 
-      value: string 
-    }) => {
-      const { transactionIds, updateType, value } = updates;
+    mutationFn: async (actionData: ActionData) => {
+      const transactionIds = Array.from(selectedTransactions);
       
       // Process each transaction sequentially
       const results = [];
@@ -151,18 +146,22 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         const transaction = transactions.find(t => t.id === id);
         if (!transaction) continue;
         
-        // Prepare the update based on type
+        // Prepare the update
         const update: any = { id };
-        if (updateType === 'category') {
-          update.category = value;
-        } else if (updateType === 'flag') {
-          // For flags, we'd need backend support for adding flags directly
-          // This is a placeholder - the actual implementation would depend on the API
-          console.log(`Adding flag "${value}" to transaction ${id}`);
+        
+        // Add category if provided
+        if (actionData.category) {
+          update.category = actionData.category;
         }
         
-        // Apply the update
-        if (updateType === 'category') {
+        // For flags, we would need additional backend support
+        // This is a placeholder for now
+        if (actionData.flagMessage) {
+          console.log(`Adding flag "${actionData.flagMessage}" to transaction ${id}`);
+        }
+        
+        // Apply the update if we have a category change
+        if (actionData.category) {
           const result = await updateTransaction(update);
           results.push(result);
         }
@@ -173,9 +172,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     onSuccess: () => {
       // Clear selection after successful update
       setSelectedTransactions(new Set());
-      setShowCategoryModal(false);
-      setShowFlagModal(false);
-      setBulkActionValue('');
+      setBulkActionData({});
       showNotification('success', 'Selected transactions updated successfully');
       // Refresh transaction data
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -212,25 +209,18 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
     setSelectedTransactions(newSelection);
   };
   
-  // Action handlers
-  const handleBulkSetCategory = () => {
-    if (selectedTransactions.size === 0 || !bulkActionValue) return;
-    
-    batchUpdateMutation.mutate({
-      transactionIds: Array.from(selectedTransactions),
-      updateType: 'category',
-      value: bulkActionValue
-    });
+  // Action handlers for bulk operations
+  const handleActionChange = (actionData: ActionData) => {
+    setBulkActionData(actionData);
   };
   
-  const handleBulkAddFlag = () => {
-    if (selectedTransactions.size === 0 || !bulkActionValue) return;
+  const handleApplyActions = () => {
+    if (selectedTransactions.size === 0 || (!bulkActionData.category && !bulkActionData.flagMessage)) {
+      return;
+    }
     
-    // For now, just show a notification since flag API might need special handling
-    showNotification('success', `Flag "${bulkActionValue}" would be added to ${selectedTransactions.size} transactions`);
-    setSelectedTransactions(new Set());
-    setShowFlagModal(false);
-    setBulkActionValue('');
+    // Apply the actions to selected transactions
+    batchUpdateMutation.mutate(bulkActionData);
   };
   
   // Determine checkbox state for header (all, none, or some selected)
@@ -299,77 +289,13 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
           <ActionMenu 
             visible={true}
             selectedCount={selectedTransactions.size}
-            onCategoryAction={() => setShowCategoryModal(true)}
-            onFlagAction={() => setShowFlagModal(true)}
+            onActionChange={handleActionChange}
+            onApply={handleApplyActions}
+            disabled={batchUpdateMutation.isPending}
           />
         )}
       </div>
       
-      {/* Category Modal */}
-      {showCategoryModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h4>Set Category for {selectedTransactions.size} items</h4>
-            <input
-              type="text"
-              placeholder="Enter category name"
-              value={bulkActionValue}
-              onChange={(e) => setBulkActionValue(e.target.value)}
-            />
-            <div className="modal-actions">
-              <button 
-                className="cancel-button" 
-                onClick={() => {
-                  setShowCategoryModal(false);
-                  setBulkActionValue('');
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="save-button" 
-                onClick={handleBulkSetCategory}
-                disabled={!bulkActionValue}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Flag Modal */}
-      {showFlagModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h4>Add Flag to {selectedTransactions.size} items</h4>
-            <input
-              type="text"
-              placeholder="Enter flag message"
-              value={bulkActionValue}
-              onChange={(e) => setBulkActionValue(e.target.value)}
-            />
-            <div className="modal-actions">
-              <button 
-                className="cancel-button" 
-                onClick={() => {
-                  setShowFlagModal(false);
-                  setBulkActionValue('');
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="save-button" 
-                onClick={handleBulkAddFlag}
-                disabled={!bulkActionValue}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <table className="transaction-table">
         <thead>

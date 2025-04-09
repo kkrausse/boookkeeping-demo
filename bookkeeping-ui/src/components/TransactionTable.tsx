@@ -163,16 +163,33 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
         if (actionData.category) {
           update.category = actionData.category;
         }
+
+        // The backend will automatically handle the rule processing for each transaction.
+        // However, we need to create a custom flag if the user has specified a flag message
+        let shouldUpdateTransaction = false;
         
-        // For flags, we would need additional backend support
-        // This is a placeholder for now
         if (actionData.flagMessage) {
-          console.log(`Adding flag "${actionData.flagMessage}" to transaction ${id}`);
+          // To add a flag to a transaction, we send the flag data as a special field
+          // that our backend utility will process
+          update.custom_flag = {
+            flag_type: 'CUSTOM',
+            message: actionData.flagMessage,
+            is_resolvable: true
+          };
+          shouldUpdateTransaction = true;
         }
         
-        // Apply the update if we have a category change
-        if (actionData.category) {
-          const result = await onUpdateTransaction({ ...transaction, ...update });
+        // Apply the update if we have any changes (category or flag)
+        if (actionData.category || shouldUpdateTransaction) {
+          // Make sure we're only sending properties that the backend can handle
+          const updatedTransaction = { ...transaction };
+          if (actionData.category) updatedTransaction.category = actionData.category;
+          
+          // Add the updates to our transaction copy
+          const result = await onUpdateTransaction({ 
+            ...updatedTransaction, 
+            ...update 
+          });
           results.push(result);
         }
       }

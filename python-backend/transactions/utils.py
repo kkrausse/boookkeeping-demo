@@ -312,6 +312,11 @@ def update_transaction_with_flags(transaction, data):
     """
     from .models import TransactionFlag
     
+    # Check for custom flag in the data
+    custom_flag = None
+    if 'custom_flag' in data:
+        custom_flag = data.pop('custom_flag')
+    
     # Validate and clean data
     cleaned_data, validation_flags = validate_transaction_data(data)
     
@@ -345,8 +350,33 @@ def update_transaction_with_flags(transaction, data):
     # Combine all flags
     all_flags = validation_flags + rule_flags
     
+    # Add the custom flag if provided
+    if custom_flag:
+        flag_type = custom_flag.get('flag_type', 'CUSTOM')
+        message = custom_flag.get('message', '')
+        is_resolvable = custom_flag.get('is_resolvable', True)
+        
+        if message:  # Only create if there's a message
+            TransactionFlag.objects.create(
+                transaction=transaction,
+                flag_type=flag_type,
+                message=message,
+                is_resolvable=is_resolvable
+            )
+            
+            # Add to our list of flags to return
+            all_flags.append({
+                'flag_type': flag_type,
+                'message': message,
+                'is_resolvable': is_resolvable
+            })
+    
     # Create new flags
     for flag_data in all_flags:
+        if flag_data.get('created', False):
+            # Skip flags we already created (like custom flags)
+            continue
+            
         # Determine if the flag is resolvable based on its type
         is_resolvable = False
         
@@ -362,6 +392,10 @@ def update_transaction_with_flags(transaction, data):
         elif flag_data['flag_type'] == 'DUPLICATE':
             is_resolvable = True
         
+        # CUSTOM flags are resolvable
+        elif flag_data['flag_type'] == 'CUSTOM':
+            is_resolvable = True
+        
         # PARSE_ERROR flags are NOT resolvable (default is False)
             
         TransactionFlag.objects.create(
@@ -370,5 +404,8 @@ def update_transaction_with_flags(transaction, data):
             message=flag_data['message'],
             is_resolvable=is_resolvable
         )
+        
+        # Mark this flag as created so we don't create it again
+        flag_data['created'] = True
     
     return transaction, all_flags

@@ -236,9 +236,11 @@ export interface Transaction {
 }
 
 export interface TransactionFlag {
+  id?: number; // We need the ID to resolve the flag
   flag_type: string;
   message: string;
   duplicates_transaction: number | null;
+  is_resolvable: boolean;
 }
 
 export type TransactionSortColumn = 'description' | 'amount' | 'datetime' | 'created_at' | 'updated_at';
@@ -296,5 +298,10 @@ export async function applyRuleToAll(ruleId: number): Promise<RuleApplyResponse>
 
 export async function applyAllRules(): Promise<RuleApplyResponse> {
   const response = await api.post('/rules/apply_all_rules/');
+  return response.data;
+}
+
+export async function resolveTransactionFlag(transactionId: number, flagId: number): Promise<any> {
+  const response = await api.post(`/transactions/${transactionId}/resolve-flag/${flagId}/`);
   return response.data;
 }

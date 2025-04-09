@@ -31,6 +31,8 @@ class TransactionFlag(models.Model):
     )
     flag_type = models.TextField()
     message = models.TextField()
+    is_resolvable = models.BooleanField(default=False, 
+                    help_text="Whether this flag can be manually resolved by the user")
 
     class Meta:
         unique_together = ('transaction', 'flag_type')
@@ -65,7 +67,8 @@ def create_duplicate_flag(sender, instance, created, **kwargs):
             flag_type='DUPLICATE',
             defaults={
                 'duplicates_transaction': duplicate,
-                'message': f'Possible duplicate of transaction {duplicate.id}'
+                'message': f'Possible duplicate of transaction {duplicate.id}',
+                'is_resolvable': True
             }
         )
         

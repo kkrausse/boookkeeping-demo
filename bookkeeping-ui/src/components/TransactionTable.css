@@ -403,6 +403,39 @@
   margin-bottom: 8px;
 }
 
+.flag-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.resolve-flag-button {
+  background-color: transparent;
+  color: #666;
+  padding: 4px;
+  height: 24px;
+  width: 24px;
+  min-width: 24px;
+  margin-left: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+
+.resolve-flag-button:hover {
+  background-color: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
+}
+
+.resolve-flag-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .duplicate-info {
   margin-top: 4px;
   padding-left: 12px;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Transaction } from '../api/transactions';
-import { Check, X, Edit, Trash2, Info, Loader2 } from 'lucide-react';
+import { Transaction, resolveTransactionFlag } from '../api/transactions';
+import { Check, X, Edit, Trash2, Info, Loader2, XCircle } from 'lucide-react';
 
 interface TransactionRowProps {
   transaction: Transaction | null; // null for new transaction
@@ -27,6 +27,9 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   const [expandedDetails, setExpandedDetails] = useState<boolean>(false);
   // For editing mode, we need to track changes before saving
   const [editValues, setEditValues] = useState<Partial<Transaction>>({});
+  
+  // Track which flags are currently being resolved
+  const [resolvingFlags, setResolvingFlags] = useState<Set<number>>(new Set());
   
   // Reset edit values when transaction changes or when entering edit mode
   useEffect(() => {
@@ -106,6 +109,38 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
       ...prev,
       [field]: value
     }));
+  };
+  
+  // Handle resolving (deleting) a flag
+  const handleResolveFlag = async (flagId: number) => {
+    if (!transaction || !transaction.id || !flagId) return;
+    
+    // Mark this flag as resolving (for loading state)
+    setResolvingFlags(prev => {
+      const newSet = new Set(prev);
+      newSet.add(flagId);
+      return newSet;
+    });
+    
+    try {
+      // Call the API to resolve the flag
+      await resolveTransactionFlag(transaction.id, flagId);
+      showNotification('success', 'Flag resolved successfully');
+      
+      // Refresh the transaction (the onUpdateTransaction callback will trigger a refetch)
+      if (onUpdateTransaction) {
+        await onUpdateTransaction({ id: transaction.id });
+      }
+    } catch (error) {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to resolve flag');
+    } finally {
+      // Remove the resolving state
+      setResolvingFlags(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(flagId);
+        return newSet;
+      });
+    }
   };
 
   const isFieldEditable = (field: keyof Transaction) => {
@@ -307,12 +342,32 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                 <ul className="flags-list">
                   {transaction.flags.map((flag, idx) => (
                     <li key={idx} className="flag-item">
-                      <strong>{flag.flag_type}</strong>: {flag.message}
-                      {flag.duplicates_transaction && (
-                        <div className="duplicate-info">
-                          Duplicates Transaction ID: {flag.duplicates_transaction}
+                      <div className="flag-content">
+                        <div>
+                          <strong>{flag.flag_type}</strong>: {flag.message}
+                          {flag.duplicates_transaction && (
+                            <div className="duplicate-info">
+                              Duplicates Transaction ID: {flag.duplicates_transaction}
+                            </div>
+                          )}
                         </div>
-                      )}
+                        
+                        {/* Only show resolve button for resolvable flags */}
+                        {flag.is_resolvable && flag.id && (
+                          <button 
+                            className="icon-button resolve-flag-button"
+                            onClick={() => handleResolveFlag(flag.id as number)} 
+                            disabled={resolvingFlags.has(flag.id as number)}
+                            title="Resolve flag"
+                          >
+                            {resolvingFlags.has(flag.id as number) ? (
+                              <Loader2 className="spinner-icon" size={16} />
+                            ) : (
+                              <XCircle size={16} />
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>

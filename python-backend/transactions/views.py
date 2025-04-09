@@ -37,6 +37,38 @@ class TransactionViewSet(viewsets.ModelViewSet):
     ordering_fields = ['description', 'category', 'amount', 'datetime', 'created_at', 'updated_at']
     ordering = ['-created_at']  # Default ordering
     
+    @action(detail=True, methods=['post'], url_path='resolve-flag/(?P<flag_id>[^/.]+)')
+    def resolve_flag(self, request, pk=None, flag_id=None):
+        """
+        Resolve (delete) a specific flag for a transaction
+        """
+        transaction = self.get_object()
+        
+        try:
+            # Find the specific flag
+            flag = transaction.flags.get(pk=flag_id)
+            
+            # Check if the flag is resolvable
+            if not flag.is_resolvable:
+                return Response({
+                    'status': 'error',
+                    'message': 'This flag cannot be manually resolved'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Delete the flag
+            flag.delete()
+            
+            return Response({
+                'status': 'success',
+                'message': 'Flag resolved successfully'
+            })
+            
+        except TransactionFlag.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Flag not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+    
     def create(self, request, *args, **kwargs):
         """Override create to handle flags."""
         try:

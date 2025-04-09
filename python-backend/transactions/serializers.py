@@ -4,7 +4,7 @@ from .models import Transaction, TransactionFlag, TransactionRule
 class TransactionFlagSerializer(serializers.ModelSerializer):
     class Meta:
         model = TransactionFlag
-        fields = ['flag_type', 'message', 'duplicates_transaction']
+        fields = ['flag_type', 'message', 'duplicates_transaction', 'is_resolvable']
 
 class TransactionSerializer(serializers.ModelSerializer):
     flags = TransactionFlagSerializer(many=True, read_only=True)

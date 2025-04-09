@@ -273,10 +273,28 @@ def create_transaction_with_flags(data):
     
     # Create flags
     for flag_data in all_flags:
+        # Determine if the flag is resolvable based on its type
+        is_resolvable = False
+        
+        # RULE_MATCH flags (from transaction rules) are resolvable
+        if flag_data['flag_type'] == 'RULE_MATCH':
+            is_resolvable = True
+        
+        # MISSING_DATA flags are resolvable
+        elif flag_data['flag_type'] == 'MISSING_DATA':
+            is_resolvable = True
+        
+        # DUPLICATE flags are resolvable
+        elif flag_data['flag_type'] == 'DUPLICATE':
+            is_resolvable = True
+        
+        # PARSE_ERROR flags are NOT resolvable (default is False)
+            
         TransactionFlag.objects.create(
             transaction=transaction,
             flag_type=flag_data['flag_type'],
-            message=flag_data['message']
+            message=flag_data['message'],
+            is_resolvable=is_resolvable
         )
     
     return transaction, all_flags
@@ -329,10 +347,28 @@ def update_transaction_with_flags(transaction, data):
     
     # Create new flags
     for flag_data in all_flags:
+        # Determine if the flag is resolvable based on its type
+        is_resolvable = False
+        
+        # RULE_MATCH flags (from transaction rules) are resolvable
+        if flag_data['flag_type'] == 'RULE_MATCH':
+            is_resolvable = True
+        
+        # MISSING_DATA flags are resolvable
+        elif flag_data['flag_type'] == 'MISSING_DATA':
+            is_resolvable = True
+        
+        # DUPLICATE flags are resolvable
+        elif flag_data['flag_type'] == 'DUPLICATE':
+            is_resolvable = True
+        
+        # PARSE_ERROR flags are NOT resolvable (default is False)
+            
         TransactionFlag.objects.create(
             transaction=transaction,
             flag_type=flag_data['flag_type'],
-            message=flag_data['message']
+            message=flag_data['message'],
+            is_resolvable=is_resolvable
         )
     
     return transaction, all_flags

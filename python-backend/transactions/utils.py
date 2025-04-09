@@ -148,12 +148,8 @@ def validate_transaction_data(data):
     category = data.get('category', '').strip()
     cleaned_data['category'] = category
     
-    # Flag missing categories
-    if not category:
-        flags.append({
-            'flag_type': 'MISSING_DATA',
-            'message': "Missing category"
-        })
+    # Note: We don't flag missing categories here anymore.
+    # This will be done after rules are applied, if still needed.
     
     # Process amount
     amount_str = data.get('amount', '')
@@ -259,6 +255,15 @@ def create_transaction_with_flags(data):
     # This ensures rules are applied before flag checks (like duplicates)
     cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
     
+    # Now check for missing category AFTER rules have been applied
+    # This way, if a rule provided a category, we won't flag it as missing
+    if not cleaned_data.get('category'):
+        missing_category_flag = {
+            'flag_type': 'MISSING_DATA',
+            'message': "Missing category"
+        }
+        validation_flags.append(missing_category_flag)
+    
     # Create transaction
     transaction = Transaction(**cleaned_data)
     transaction.save()
@@ -298,6 +303,15 @@ def update_transaction_with_flags(transaction, data):
     
     # Apply transaction rules
     cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
+    
+    # Now check for missing category AFTER rules have been applied
+    # This way, if a rule provided a category, we won't flag it as missing
+    if not cleaned_data.get('category'):
+        missing_category_flag = {
+            'flag_type': 'MISSING_DATA',
+            'message': "Missing category"
+        }
+        validation_flags.append(missing_category_flag)
     
     # Clear existing parse error, missing data, and rule match flags
     TransactionFlag.objects.filter(

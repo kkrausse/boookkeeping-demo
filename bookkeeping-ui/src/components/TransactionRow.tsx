@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Transaction, resolveTransactionFlag } from '../api/transactions';
-import { Check, X, Edit, Trash2, Info, Loader2, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Transaction, TransactionFlag, resolveTransactionFlag } from '../api/transactions';
+import { Check, X, Edit, Trash2, Info, Loader2, XCircle, CheckCircle } from 'lucide-react';
 
 interface TransactionRowProps {
   transaction: Transaction | null; // null for new transaction
@@ -30,6 +30,9 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   
   // Track which flags are currently being resolved
   const [resolvingFlags, setResolvingFlags] = useState<Set<number>>(new Set());
+  
+  // Track resolved flags in local state (server will delete them, this is for UI only)
+  const [localResolvedFlags, setLocalResolvedFlags] = useState<TransactionFlag[]>([]);
   
   // Reset edit values when transaction changes or when entering edit mode
   useEffect(() => {
@@ -112,8 +115,10 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   };
   
   // Handle resolving (deleting) a flag
-  const handleResolveFlag = async (flagId: number) => {
-    if (!transaction || !transaction.id || !flagId) return;
+  const handleResolveFlag = async (flag: TransactionFlag) => {
+    if (!transaction || !transaction.id || !flag?.id) return;
+    
+    const flagId = flag.id;
     
     // Mark this flag as resolving (for loading state)
     setResolvingFlags(prev => {
@@ -125,6 +130,10 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     try {
       // Call the API to resolve the flag
       await resolveTransactionFlag(transaction.id, flagId);
+      
+      // Store a copy of the resolved flag to show in the UI
+      setLocalResolvedFlags(prev => [...prev, { ...flag, id: undefined }]);
+      
       showNotification('success', 'Flag resolved successfully');
       
       // Refresh the transaction (the onUpdateTransaction callback will trigger a refetch)
@@ -192,6 +201,20 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   };
 
   const isPending = isUpdating;
+  
+  // Split flags into active and resolved for display purposes
+  const { activeFlags, resolvedFlagsCount } = useMemo(() => {
+    if (!transaction || !transaction.flags) {
+      return { activeFlags: [], resolvedFlagsCount: localResolvedFlags.length };
+    }
+    return {
+      activeFlags: transaction.flags,
+      resolvedFlagsCount: localResolvedFlags.length
+    };
+  }, [transaction, localResolvedFlags]);
+  
+  const hasUnresolvedFlags = activeFlags && activeFlags.length > 0;
+  const hasOnlyResolvedFlags = !hasUnresolvedFlags && resolvedFlagsCount > 0;
 
   return (
     <>
@@ -308,8 +331,12 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                     title="Transaction details"
                   >
                     <Info size={18} />
-                    {transaction.flags && transaction.flags.length > 0 && (
-                      <span className="flag-count">{transaction.flags.length}</span>
+                    {/* Show flag count with appropriate styling */}
+                    {hasUnresolvedFlags && (
+                      <span className="flag-count">{activeFlags.length}</span>
+                    )}
+                    {hasOnlyResolvedFlags && (
+                      <span className="flag-count resolved-only">{resolvedFlagsCount}</span>
                     )}
                   </button>
                 </>
@@ -321,7 +348,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
       
       {/* Details / Flags Row */}
       {expandedDetails && transaction && (
-        <div className={`flag-details-row ${transaction.flags && transaction.flags.length > 0 ? 'has-flags' : ''}`}>
+        <div className={`flag-details-row ${hasUnresolvedFlags ? 'has-unresolved-flags' : ''} ${hasOnlyResolvedFlags ? 'resolved-flags-only' : ''}`}>
           <div className="flag-details">
             <h4>Transaction Details</h4>
             <div className="transaction-metadata">
@@ -336,15 +363,29 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
               </div>
             </div>
             
-            {transaction.flags && transaction.flags.length > 0 && (
-              <>
-                <h5>Flags</h5>
+            {/* Active/Unresolved Flags */}
+            {hasUnresolvedFlags && (
+              <div className="flags-section">
+                <h5>Unresolved Flags</h5>
                 <ul className="flags-list">
-                  {transaction.flags.map((flag, idx) => (
-                    <li key={idx} className="flag-item">
+                  {activeFlags.map((flag, idx) => (
+                    <li key={`active-${idx}`} className="flag-item">
                       <div className="flag-content">
-                        <div>
+                        {/* Checkbox for resolving flags */}
+                        <input 
+                          type="checkbox"
+                          className="flag-checkbox"
+                          onChange={() => flag.id && handleResolveFlag(flag)}
+                          disabled={!flag.is_resolvable || (flag.id && resolvingFlags.has(flag.id))}
+                          title={flag.is_resolvable ? "Mark as resolved" : "System flags cannot be resolved"}
+                          checked={false}
+                        />
+                        
+                        <div className="flag-text">
                           <strong>{flag.flag_type}</strong>: {flag.message}
+                          {!flag.is_resolvable && (
+                            <span className="system-flag">System</span>
+                          )}
                           {flag.duplicates_transaction && (
                             <div className="duplicate-info">
                               Duplicates Transaction ID: {flag.duplicates_transaction}
@@ -352,26 +393,53 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                           )}
                         </div>
                         
-                        {/* Only show resolve button for resolvable flags */}
-                        {flag.is_resolvable && flag.id && (
-                          <button 
-                            className="icon-button resolve-flag-button"
-                            onClick={() => handleResolveFlag(flag.id as number)} 
-                            disabled={resolvingFlags.has(flag.id as number)}
-                            title="Resolve flag"
-                          >
-                            {resolvingFlags.has(flag.id as number) ? (
-                              <Loader2 className="spinner-icon" size={16} />
-                            ) : (
-                              <XCircle size={16} />
-                            )}
-                          </button>
+                        {/* Loading indicator while resolving */}
+                        {flag.id && resolvingFlags.has(flag.id) && (
+                          <Loader2 className="spinner-icon" size={16} />
                         )}
                       </div>
                     </li>
                   ))}
                 </ul>
-              </>
+              </div>
+            )}
+            
+            {/* Resolved Flags */}
+            {localResolvedFlags.length > 0 && (
+              <div className="resolved-flags-section">
+                <h5>Resolved Flags</h5>
+                <ul className="flags-list">
+                  {localResolvedFlags.map((flag, idx) => (
+                    <li key={`resolved-${idx}`} className="flag-item resolved">
+                      <div className="flag-content">
+                        {/* Checkbox for resolved flags (always checked and disabled) */}
+                        <input 
+                          type="checkbox"
+                          className="flag-checkbox"
+                          disabled={true}
+                          checked={true}
+                          title="This flag has been resolved"
+                        />
+                        
+                        <div className="flag-text">
+                          <strong>{flag.flag_type}</strong>: {flag.message}
+                          {flag.duplicates_transaction && (
+                            <div className="duplicate-info">
+                              Duplicates Transaction ID: {flag.duplicates_transaction}
+                            </div>
+                          )}
+                          <small>(Resolved)</small>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* No flags message */}
+            {!hasUnresolvedFlags && !hasOnlyResolvedFlags && (
+              <p className="no-flags-message">This transaction has no flags.</p>
             )}
           </div>
         </div>

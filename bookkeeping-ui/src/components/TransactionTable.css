@@ -369,12 +369,21 @@
   font-weight: bold;
 }
 
+/* If no unresolved flags, use a different color */
+.flag-count.resolved-only {
+  background-color: #7f8c8d;
+}
+
 .flag-details-row {
   background-color: #f8f9fa;
 }
 
-.flag-details-row.has-flags {
+.flag-details-row.has-unresolved-flags {
   background-color: #fffbf0;
+}
+
+.flag-details-row.resolved-flags-only {
+  background-color: #f8f9fa;
 }
 
 .flag-details {
@@ -403,10 +412,64 @@
   margin-bottom: 8px;
 }
 
+.flag-item.resolved {
+  color: #7f8c8d;
+}
+
+.flags-section {
+  margin-bottom: 16px;
+}
+
+.resolved-flags-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed #ddd;
+}
+
+.no-flags-message {
+  color: #7f8c8d;
+  font-style: italic;
+  margin-top: 12px;
+}
+
 .flag-content {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+}
+
+.flag-checkbox {
+  margin-right: 10px;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.flag-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.flag-text {
+  flex: 1;
+}
+
+.flag-item.resolved .flag-text {
+  text-decoration: none;
+  color: #7f8c8d;
+}
+
+/* System flag that can't be resolved */
+.flag-item .system-flag {
+  display: inline-block;
+  font-size: 11px;
+  background-color: #eee;
+  color: #666;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 5px;
+  vertical-align: middle;
 }
 
 .resolve-flag-button {
@@ -633,8 +696,12 @@
   border-bottom: 1px solid #eaeaea;
 }
 
-.flag-details-row.has-flags {
+.flag-details-row.has-unresolved-flags {
   background-color: #fffbf0;
+}
+
+.flag-details-row.resolved-flags-only {
+  background-color: #f8f9fa;
 }
 
 .editing-row {

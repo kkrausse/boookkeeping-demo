@@ -1,0 +1,235 @@
+/* RulesPage.css */
+.apply-all-button {
+  background-color: #28a745;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  min-width: 150px;
+  transition: background-color 0.2s;
+  margin-right: 8px;
+}
+
+.apply-all-button:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.apply-all-button:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.apply-button {
+  color: #28a745 !important;
+}
+
+.apply-button:hover {
+  background-color: rgba(40, 167, 69, 0.1) !important;
+}
+
+.spinner-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rules-info {
+  margin-bottom: 16px;
+  color: #555;
+  font-size: 14px;
+}
+
+/* Rule form styles */
+.rule-form-container {
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.rule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-row label {
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: #555;
+}
+
+.form-row input {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.amount-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.amount-input-group select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  min-width: 140px;
+}
+
+.amount-input-group input {
+  flex: 1;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.save-button, .cancel-button {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+
+.save-button {
+  background-color: #28a745;
+  color: white;
+}
+
+.save-button:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.cancel-button {
+  background-color: #6c757d;
+  color: white;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+.save-button:disabled, .cancel-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Rule list styles */
+.rules-list {
+  margin-top: 24px;
+}
+
+.rules-list h2 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 18px;
+  color: #333;
+}
+
+.rule-condition, .rule-action {
+  margin-bottom: 8px;
+}
+
+.condition-label, .action-label {
+  font-weight: 500;
+  margin-right: 4px;
+  color: #555;
+}
+
+.condition-value, .action-value {
+  color: #333;
+}
+
+.no-rules {
+  text-align: center;
+  color: #666;
+  padding: 32px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 32px;
+  color: #666;
+}
+
+/* Notification styles */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 10px 16px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-weight: 500;
+  font-size: 14px;
+  animation: slideIn 0.3s ease-out forwards;
+  max-width: 300px;
+}
+
+.notification.success {
+  background-color: #d4edda;
+  border-left: 4px solid #28a745;
+  color: #155724;
+}
+
+.notification.error {
+  background-color: #f8d7da;
+  border-left: 4px solid #dc3545;
+  color: #721c24;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

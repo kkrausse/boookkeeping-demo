@@ -11,9 +11,12 @@ import {
   createTransactionRule,
   updateTransactionRule,
   deleteTransactionRule,
+  applyRuleToAll,
+  applyAllRules,
+  RuleApplyResponse,
   PaginatedResponse
 } from '../api/transactions';
-import { Edit, Trash2, Plus, Loader2 } from 'lucide-react';
+import { Edit, Trash2, Plus, Loader2, Play, PlayCircle } from 'lucide-react';
 import '../components/TransactionTable.css';
 
 // Helper component for rule action rendering
@@ -128,6 +131,30 @@ export function RulesPage() {
     }
   });
   
+  // Apply rule to all transactions mutation
+  const applyRuleMutation = useMutation({
+    mutationFn: applyRuleToAll,
+    onSuccess: (data: RuleApplyResponse) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      showNotification('success', `Rule applied to ${data.updated_count} transactions`);
+    },
+    onError: (error) => {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to apply rule');
+    }
+  });
+  
+  // Apply all rules to all transactions mutation
+  const applyAllRulesMutation = useMutation({
+    mutationFn: applyAllRules,
+    onSuccess: (data: RuleApplyResponse) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      showNotification('success', `All rules applied to ${data.updated_count} transactions`);
+    },
+    onError: (error) => {
+      showNotification('error', error instanceof Error ? error.message : 'Failed to apply rules');
+    }
+  });
+  
   const resetForm = () => {
     setNewRule({
       filter_description: '',
@@ -207,6 +234,14 @@ export function RulesPage() {
     resetForm();
   };
   
+  const handleApplyRule = (id: number) => {
+    applyRuleMutation.mutate(id);
+  };
+  
+  const handleApplyAllRules = () => {
+    applyAllRulesMutation.mutate();
+  };
+  
   const isPending = createMutation.isPending || updateMutation.isPending;
   
   const totalRules = data?.count || 0;
@@ -226,6 +261,16 @@ export function RulesPage() {
       <div className="table-header">
         <h2>Rules</h2>
         <div className="table-actions">
+          <button 
+            className="apply-all-button"
+            onClick={handleApplyAllRules}
+            disabled={applyAllRulesMutation.isPending || rules.length === 0}
+            title="Apply all rules to all transactions"
+          >
+            <PlayCircle size={18} />
+            <span>Apply All Rules</span>
+            {applyAllRulesMutation.isPending && <Loader2 className="spinner-icon" size={16} />}
+          </button>
           <button 
             className="add-button"
             onClick={() => {
@@ -377,6 +422,14 @@ export function RulesPage() {
                       title="Edit rule"
                     >
                       <Edit size={18} />
+                    </button>
+                    <button
+                      className="icon-button apply-button"
+                      onClick={() => rule.id && handleApplyRule(rule.id)}
+                      disabled={applyRuleMutation.isPending}
+                      title="Apply rule to all transactions"
+                    >
+                      <Play size={18} />
                     </button>
                     <button
                       className="icon-button delete-button"

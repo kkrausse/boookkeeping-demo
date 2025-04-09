@@ -186,3 +186,18 @@ export async function updateTransactionRule(rule: TransactionRule & { id: number
   const response = await api.put(`/rules/${rule.id}/`, rule);
   return response.data;
 }
+
+export interface RuleApplyResponse {
+  rule_id?: number;
+  updated_count: number;
+}
+
+export async function applyRuleToAll(ruleId: number): Promise<RuleApplyResponse> {
+  const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
+  return response.data;
+}
+
+export async function applyAllRules(): Promise<RuleApplyResponse> {
+  const response = await api.post('/rules/apply_all_rules/');
+  return response.data;
+}

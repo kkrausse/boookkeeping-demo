@@ -183,9 +183,66 @@ def validate_transaction_data(data):
     
     return cleaned_data, flags
 
+def apply_transaction_rules(transaction_data):
+    """
+    Apply transaction rules to a transaction data dictionary.
+    
+    Args:
+        transaction_data: Dictionary containing transaction data
+        
+    Returns:
+        tuple: (modified transaction data, list of applied rule flags)
+    """
+    from .models import TransactionRule
+    
+    applied_rule_flags = []
+    
+    # Get all active rules
+    rules = TransactionRule.objects.all()
+    
+    for rule in rules:
+        rule_matches = True
+        
+        # Check description filter
+        if rule.filter_description and transaction_data.get('description'):
+            if rule.filter_description.lower() not in transaction_data['description'].lower():
+                rule_matches = False
+                
+        # Check amount filter
+        if rule.filter_amount_value is not None and rule.filter_amount_comparison and transaction_data.get('amount') is not None:
+            amount = transaction_data['amount']
+            if isinstance(amount, str):
+                try:
+                    amount = Decimal(amount)
+                except (InvalidOperation, ValueError):
+                    rule_matches = False
+            
+            if rule_matches:
+                if rule.filter_amount_comparison == 'above' and not (amount > rule.filter_amount_value):
+                    rule_matches = False
+                elif rule.filter_amount_comparison == 'below' and not (amount < rule.filter_amount_value):
+                    rule_matches = False
+                elif rule.filter_amount_comparison == 'equal' and not (amount == rule.filter_amount_value):
+                    rule_matches = False
+        
+        # Apply rule actions if all conditions match
+        if rule_matches:
+            # Apply category if rule has one
+            if rule.category:
+                transaction_data['category'] = rule.category
+                
+            # Add flag for rule match
+            if rule.flag_message:
+                applied_rule_flags.append({
+                    'flag_type': 'RULE_MATCH',
+                    'message': rule.flag_message
+                })
+    
+    return transaction_data, applied_rule_flags
+
 def create_transaction_with_flags(data):
     """
-    Create a transaction from data and handle flags.
+    Create a transaction from data, apply rules, and handle flags.
     
     Args:
         data: Dictionary containing transaction data
@@ -197,6 +254,10 @@ def create_transaction_with_flags(data):
     
     # Validate and clean data
     cleaned_data, flags = validate_transaction_data(data)
+    
+    # Apply transaction rules
+    cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
+    flags.extend(rule_flags)
     
     # Create transaction
     transaction = Transaction(**cleaned_data)
@@ -214,7 +275,7 @@ def create_transaction_with_flags(data):
 
 def update_transaction_with_flags(transaction, data):
     """
-    Update an existing transaction with new data and handle flags.
+    Update an existing transaction with new data, apply rules, and handle flags.
     
     Args:
         transaction: Existing Transaction object
@@ -228,10 +289,14 @@ def update_transaction_with_flags(transaction, data):
     # Validate and clean data
     cleaned_data, flags = validate_transaction_data(data)
     
-    # Clear existing parse error and missing data flags
+    # Apply transaction rules
+    cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
+    flags.extend(rule_flags)
+    
+    # Clear existing parse error, missing data, and rule match flags
     TransactionFlag.objects.filter(
         transaction=transaction,
-        flag_type__in=['PARSE_ERROR', 'MISSING_DATA']
+        flag_type__in=['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH']
     ).delete()
     
     # Update transaction

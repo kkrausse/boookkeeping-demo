@@ -160,3 +160,114 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
     queryset = TransactionRule.objects.all().order_by('-created_at')
     serializer_class = TransactionRuleSerializer
     pagination_class = StandardResultsSetPagination
+    
+    @action(detail=True, methods=['post'])
+    def apply_to_all(self, request, pk=None):
+        """Apply this rule to all existing transactions."""
+        rule = self.get_object()
+        
+        # Import here to avoid circular imports
+        from .utils import apply_transaction_rules, update_transaction_with_flags
+        from .models import Transaction, TransactionFlag
+        
+        # Get all transactions
+        transactions = Transaction.objects.all()
+        
+        # Count of transactions updated
+        updated_count = 0
+        
+        # Process each transaction
+        for transaction in transactions:
+            # Create a data dict from the transaction
+            data = {
+                'description': transaction.description,
+                'category': transaction.category,
+                'amount': transaction.amount,
+                'datetime': transaction.datetime
+            }
+            
+            # Apply this specific rule only
+            rule_matches = True
+            
+            # Check description filter
+            if rule.filter_description and data.get('description'):
+                if rule.filter_description.lower() not in data['description'].lower():
+                    rule_matches = False
+                    
+            # Check amount filter
+            if rule.filter_amount_value is not None and rule.filter_amount_comparison and data.get('amount') is not None:
+                amount = data['amount']
+                
+                if rule.filter_amount_comparison == 'above' and not (amount > rule.filter_amount_value):
+                    rule_matches = False
+                elif rule.filter_amount_comparison == 'below' and not (amount < rule.filter_amount_value):
+                    rule_matches = False
+                elif rule.filter_amount_comparison == 'equal' and not (amount == rule.filter_amount_value):
+                    rule_matches = False
+            
+            # Apply rule actions if conditions match
+            if rule_matches:
+                was_updated = False
+                
+                # Apply category if rule has one
+                if rule.category and transaction.category != rule.category:
+                    transaction.category = rule.category
+                    was_updated = True
+                    
+                # Add flag for rule match if needed
+                if rule.flag_message:
+                    # Check if the flag already exists
+                    existing_flag = TransactionFlag.objects.filter(
+                        transaction=transaction,
+                        flag_type='RULE_MATCH',
+                        message=rule.flag_message
+                    ).exists()
+                    
+                    if not existing_flag:
+                        TransactionFlag.objects.create(
+                            transaction=transaction,
+                            flag_type='RULE_MATCH',
+                            message=rule.flag_message
+                        )
+                        was_updated = True
+                
+                # Save the transaction if updated
+                if was_updated:
+                    transaction.save()
+                    updated_count += 1
+        
+        return Response({
+            'rule_id': rule.id,
+            'updated_count': updated_count
+        })
+    
+    @action(detail=False, methods=['post'])
+    def apply_all_rules(self, request):
+        """Apply all rules to all existing transactions."""
+        # Import here to avoid circular imports
+        from .utils import apply_transaction_rules, update_transaction_with_flags
+        from .models import Transaction
+        
+        # Get all transactions
+        transactions = Transaction.objects.all()
+        
+        # Count of transactions updated
+        updated_count = 0
+        
+        # Process each transaction
+        for transaction in transactions:
+            # Create a data dict from the transaction
+            data = {
+                'description': transaction.description,
+                'category': transaction.category,
+                'amount': transaction.amount,
+                'datetime': transaction.datetime
+            }
+            
+            # Apply all rules and update the transaction
+            updated_tx, _ = update_transaction_with_flags(transaction, data)
+            updated_count += 1
+        
+        return Response({
+            'updated_count': updated_count
+        })

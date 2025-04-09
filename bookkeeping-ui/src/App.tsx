@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './App.css'
-import './styles/RulesPage.css'
 import { TransactionsPage } from './pages/TransactionsPage'
 import { RulesPage } from './pages/RulesPage'
 import { Navbar } from './components/Navbar'

@@ -135,7 +135,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   return (
     <div className="filter-panel">
       <div className="filter-header">
-        <h3>{isAddingRule ? 'Create Transaction Rule' : 'Filter Transactions'}</h3>
         <div className="filter-actions">
           <button 
             className="rule-button"

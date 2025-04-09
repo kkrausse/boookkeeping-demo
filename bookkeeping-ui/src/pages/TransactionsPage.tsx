@@ -362,8 +362,7 @@ export function TransactionsPage() {
 
   return (
     <div className="page-container">
-      <h1>Transactions</h1>
-      
+
       {/* Notification tooltip */}
       {notification && (
         <div className={`notification ${notification.type}`}>

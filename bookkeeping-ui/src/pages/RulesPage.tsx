@@ -249,8 +249,7 @@ export function RulesPage() {
 
   return (
     <div className="page-container">
-      <h1>Transaction Rules</h1>
-      
+
       {notification && (
         <div className={`notification ${notification.type}`}>
           {notification.message}
@@ -262,17 +261,7 @@ export function RulesPage() {
       <div className="table-header">
         <h2>Rules</h2>
         <div className="table-actions">
-          <button 
-            className="apply-all-button"
-            onClick={handleApplyAllRules}
-            disabled={applyAllRulesMutation.isPending || rules.length === 0}
-            title="Apply all rules to all transactions"
-          >
-            <PlayCircle size={18} />
-            <span>Apply All Rules</span>
-            {applyAllRulesMutation.isPending && <Loader2 className="spinner-icon" size={16} />}
-          </button>
-          <button 
+          <button
             className="add-button"
             onClick={() => {
               setShowAddRule(!showAddRule);

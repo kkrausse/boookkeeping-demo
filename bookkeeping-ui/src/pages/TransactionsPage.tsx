@@ -209,6 +209,7 @@ export function TransactionsPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteTransaction,
     onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
       queryClient.setQueryData<PaginatedResponse<Transaction>>(
         TRANSACTION_KEYS.paginated(queryParams),
         old => {
@@ -219,6 +220,9 @@ export function TransactionsPage() {
           };
         }
       );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
     }
   });
   

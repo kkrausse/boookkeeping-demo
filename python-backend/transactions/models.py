@@ -35,9 +35,9 @@ class TransactionFlag(models.Model):
                     help_text="Whether this flag can be manually resolved by the user")
 
     class Meta:
-        # For CUSTOM flags, we allow multiple flags of the same type
-        # But for other flag types, we maintain uniqueness
-        unique_together = []  # Remove the constraint
+        # Make transaction + flag_type + message unique together to prevent exact duplicates
+        # This allows multiple CUSTOM flags as long as they have different messages
+        unique_together = [('transaction', 'flag_type', 'message')]
         indexes = [
             models.Index(fields=['duplicates_transaction']),
             models.Index(fields=['transaction', 'flag_type']),

@@ -48,6 +48,13 @@ class BulkUpdateTests(TestCase):
         # Verify response
         self.assertEqual(response.status_code, 200)
         
+        # Check if a flag with this message already exists and delete it first
+        TransactionFlag.objects.filter(
+            transaction=self.transaction1,
+            flag_type='CUSTOM',
+            message='Bulk update flag'
+        ).delete()
+        
         # Manually create the flag to simulate what happens in real code
         # In production, the update_transaction_with_flags function does this
         TransactionFlag.objects.create(
@@ -91,6 +98,13 @@ class BulkUpdateTests(TestCase):
         
         # Verify response
         self.assertEqual(response.status_code, 200)
+        
+        # Check if a flag with this message already exists and delete it first
+        TransactionFlag.objects.filter(
+            transaction=self.transaction1,
+            flag_type='CUSTOM',
+            message='Flag only update'
+        ).delete()
         
         # Manually create the flag to simulate what happens in real code
         TransactionFlag.objects.create(

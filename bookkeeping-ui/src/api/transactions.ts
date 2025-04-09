@@ -301,7 +301,30 @@ export async function applyAllRules(): Promise<RuleApplyResponse> {
   return response.data;
 }
 
+// Direct API call function for resolving flags
 export async function resolveTransactionFlag(transactionId: number, flagId: number): Promise<any> {
   const response = await api.post(`/transactions/${transactionId}/resolve-flag/${flagId}/`);
   return response.data;
+}
+
+// Hook for using TanStack Query to resolve flags
+export function useResolveTransactionFlag() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ transactionId, flagId }: { transactionId: number, flagId: number }) => 
+      resolveTransactionFlag(transactionId, flagId),
+    
+    onSuccess: (_, variables) => {
+      // Invalidate the specific transaction
+      queryClient.invalidateQueries({
+        queryKey: ['transactions', variables.transactionId]
+      });
+      
+      // Also invalidate all transactions queries to update lists
+      queryClient.invalidateQueries({
+        queryKey: ['transactions']
+      });
+    }
+  });
 }

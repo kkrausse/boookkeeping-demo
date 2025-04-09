@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Transaction, TransactionFlag, resolveTransactionFlag } from '../api/transactions';
-import { Check, X, Edit, Trash2, Info, Loader2, XCircle, CheckCircle } from 'lucide-react';
+import { Transaction, TransactionFlag, useResolveTransactionFlag } from '../api/transactions';
+import { Check, X, Edit, Trash2, Info, Loader2, XCircle, CheckCircle, SquareCheck } from 'lucide-react';
 
 interface TransactionRowProps {
   transaction: Transaction | null; // null for new transaction
@@ -114,11 +114,15 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     }));
   };
   
+  // Use the TanStack Query mutation hook for resolving flags
+  const resolveFlagMutation = useResolveTransactionFlag();
+  
   // Handle resolving (deleting) a flag
   const handleResolveFlag = async (flag: TransactionFlag) => {
     if (!transaction || !transaction.id || !flag?.id) return;
     
     const flagId = flag.id;
+    const transactionId = transaction.id;
     
     // Mark this flag as resolving (for loading state)
     setResolvingFlags(prev => {
@@ -128,18 +132,17 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     });
     
     try {
-      // Call the API to resolve the flag
-      await resolveTransactionFlag(transaction.id, flagId);
+      // Call the API to resolve the flag using TanStack Query mutation
+      await resolveFlagMutation.mutateAsync({ transactionId, flagId });
       
       // Store a copy of the resolved flag to show in the UI
       setLocalResolvedFlags(prev => [...prev, { ...flag, id: undefined }]);
       
       showNotification('success', 'Flag resolved successfully');
       
-      // Refresh the transaction (the onUpdateTransaction callback will trigger a refetch)
-      if (onUpdateTransaction) {
-        await onUpdateTransaction({ id: transaction.id });
-      }
+      // We don't need to manually update the transaction anymore
+      // The mutation's onSuccess handler will invalidate the queries
+      // and trigger a refetch automatically
     } catch (error) {
       showNotification('error', error instanceof Error ? error.message : 'Failed to resolve flag');
     } finally {
@@ -202,11 +205,24 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
 
   const isPending = isUpdating;
   
+  // Reset localResolvedFlags when transaction changes
+  useEffect(() => {
+    if (transaction?.id) {
+      setLocalResolvedFlags([]);
+    }
+  }, [transaction?.id]);
+  
   // Split flags into active and resolved for display purposes
   const { activeFlags, resolvedFlagsCount } = useMemo(() => {
     if (!transaction || !transaction.flags) {
       return { activeFlags: [], resolvedFlagsCount: localResolvedFlags.length };
     }
+    
+    // Log flags for debugging
+    if (transaction.flags.length > 0) {
+      console.log('Transaction Flags:', JSON.stringify(transaction.flags, null, 2));
+    }
+    
     return {
       activeFlags: transaction.flags,
       resolvedFlagsCount: localResolvedFlags.length
@@ -371,15 +387,29 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                   {activeFlags.map((flag, idx) => (
                     <li key={`active-${idx}`} className="flag-item">
                       <div className="flag-content">
-                        {/* Checkbox for resolving flags */}
-                        <input 
-                          type="checkbox"
-                          className="flag-checkbox"
-                          onChange={() => flag.id && handleResolveFlag(flag)}
-                          disabled={!flag.is_resolvable || (flag.id && resolvingFlags.has(flag.id))}
-                          title={flag.is_resolvable ? "Mark as resolved" : "System flags cannot be resolved"}
-                          checked={false}
-                        />
+                        {/* Button for resolving flags */}
+                        {flag.is_resolvable ? (
+                          <button 
+                            className="resolve-flag-button"
+                          onClick={() => flag.id && handleResolveFlag(flag)}
+                            disabled={flag.id && resolvingFlags.has(flag.id)}
+                            title="Resolve this flag"
+                          >
+                            {flag.id && resolvingFlags.has(flag.id) ? (
+                              <Loader2 className="spinner-icon" size={16} />
+                            ) : (
+                              <SquareCheck size={16} />
+                            )}
+                          </button>
+                        ) : (
+                          <button 
+                            className="resolve-flag-button system"
+                            disabled={true}
+                            title="System flags cannot be resolved"
+                          >
+                            <SquareCheck size={16} />
+                          </button>
+                        )}
                         
                         <div className="flag-text">
                           <strong>{flag.flag_type}</strong>: {flag.message}
@@ -393,10 +423,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                           )}
                         </div>
                         
-                        {/* Loading indicator while resolving */}
-                        {flag.id && resolvingFlags.has(flag.id) && (
-                          <Loader2 className="spinner-icon" size={16} />
-                        )}
+                        {/* Loading indicator is now inside the button */}
                       </div>
                     </li>
                   ))}
@@ -412,14 +439,10 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                   {localResolvedFlags.map((flag, idx) => (
                     <li key={`resolved-${idx}`} className="flag-item resolved">
                       <div className="flag-content">
-                        {/* Checkbox for resolved flags (always checked and disabled) */}
-                        <input 
-                          type="checkbox"
-                          className="flag-checkbox"
-                          disabled={true}
-                          checked={true}
-                          title="This flag has been resolved"
-                        />
+                        {/* Icon for resolved flags */}
+                        <div className="resolved-flag-icon" title="This flag has been resolved">
+                          <CheckCircle size={16} />
+                        </div>
                         
                         <div className="flag-text">
                           <strong>{flag.flag_type}</strong>: {flag.message}

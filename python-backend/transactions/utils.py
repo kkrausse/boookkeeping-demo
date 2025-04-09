@@ -282,10 +282,14 @@ def create_transaction_with_flags(data):
         
         # MISSING_DATA flags are resolvable
         elif flag_data['flag_type'] == 'MISSING_DATA':
-            is_resolvable = True
+            is_resolvable = False
         
         # DUPLICATE flags are resolvable
         elif flag_data['flag_type'] == 'DUPLICATE':
+            is_resolvable = True
+            
+        # CUSTOM flags are resolvable
+        elif flag_data['flag_type'] == 'CUSTOM':
             is_resolvable = True
         
         # PARSE_ERROR flags are NOT resolvable (default is False)

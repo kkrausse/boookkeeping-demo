@@ -4,3 +4,6 @@ description,category,amount,timestamp
 "Subscription","Entertainment",15.00,"2025-04-05 10:00:00"
 "Electricity bill","Utilities",120.00,"2025-04-05 12:00:00"
 "Gym membership","Fitness",40.00,"2025-04-05 15:00:00"
+"gas @ chevron",,68.00,"2024-04-05 15:00:00"
+"substack sub",,40.00,"2025-04-05 15:00:00"
+"amazon order",,20.00,"2025-04-05 15:00:00"

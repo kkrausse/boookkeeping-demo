@@ -384,7 +384,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
               Description {renderSortArrow('description')}
             </th>
             <th>Category</th>
-            <th className="actions-column">Actions</th>
+            <th className="actions-column" onClick={() => onChangeSort('flags')}>
+              Actions {renderSortArrow('flags')}
+            </th>
           </tr>
         </thead>
         <tbody>

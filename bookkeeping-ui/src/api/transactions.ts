@@ -187,8 +187,15 @@ export async function fetchTransactions(params: FetchTransactionsParams = {}): P
   
   // Add sorting if provided
   if (sort) {
-    const ordering = `${sort.order === 'desc' ? '-' : ''}${sort.column}`;
-    queryParams.append('ordering', ordering);
+    // Special case for flags sorting (sort by flag count)
+    if (sort.column === 'flags') {
+      // Use the flag count annotation from the Django backend
+      const ordering = `${sort.order === 'desc' ? '-' : ''}flag_count`;
+      queryParams.append('ordering', ordering);
+    } else {
+      const ordering = `${sort.order === 'desc' ? '-' : ''}${sort.column}`;
+      queryParams.append('ordering', ordering);
+    }
   }
   
   // Add filters if provided
@@ -246,7 +253,7 @@ export interface TransactionFlag {
   is_resolvable: boolean;
 }
 
-export type TransactionSortColumn = 'description' | 'amount' | 'datetime' | 'created_at' | 'updated_at';
+export type TransactionSortColumn = 'description' | 'amount' | 'datetime' | 'created_at' | 'updated_at' | 'flags';
 
 export interface TransactionSort {
   column: TransactionSortColumn

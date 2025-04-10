@@ -6,6 +6,7 @@ import csv
 from io import TextIOWrapper
 from decimal import Decimal, InvalidOperation
 from django.utils import timezone
+from django.db import models
 from datetime import datetime
 import pytz
 import logging
@@ -36,15 +37,30 @@ class StandardResultsSetPagination(pagination.PageNumberPagination):
     max_page_size = 100
 
 class TransactionViewSet(viewsets.ModelViewSet):
-    queryset = Transaction.objects.all().order_by('-created_at')
+    # Keep the queryset attribute for DRF router but use get_queryset for actual queries
+    queryset = Transaction.objects.all()
     serializer_class = TransactionSerializer
     pagination_class = StandardResultsSetPagination
     
     # Enable filtering and ordering
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = TransactionFilter
-    ordering_fields = ['description', 'category', 'amount', 'datetime', 'created_at', 'updated_at']
+    ordering_fields = ['description', 'category', 'amount', 'datetime', 'created_at', 'updated_at', 'flag_count']
     ordering = ['-created_at']  # Default ordering
+    
+    def get_queryset(self):
+        """
+        Override get_queryset to add annotation for flag_count to enable sorting by flag count
+        """
+        queryset = Transaction.objects.all()
+        
+        # Annotate with flag count for sorting by number of unresolved flags
+        queryset = queryset.annotate(
+            flag_count=models.Count('flags')
+        )
+        
+        # Apply default ordering
+        return queryset.order_by('-created_at')
     
     @action(detail=True, methods=['post'], url_path='resolve-flag/(?P<flag_id>[^/.]+)')
     def resolve_flag(self, request, pk=None, flag_id=None):

@@ -577,6 +577,23 @@
 .actions-column {
   width: 120px;
   text-align: center !important;
+  cursor: pointer;
+  position: relative;
+}
+
+.actions-column:hover::after {
+  content: 'Sort by flag count';
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
 }
 
 .action-buttons {

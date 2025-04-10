@@ -8,9 +8,18 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from datetime import datetime
 import pytz
+import logging
 from .models import Transaction, TransactionFlag, TransactionRule
 from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
-from .utils import create_transaction_with_flags, update_transaction_with_flags, log_info
+from .utils import create_transaction_with_flags, update_transaction_with_flags
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+def log_info(message):
+    """Helper function for logging info messages."""
+    logger.info(message)
+    print(datetime.now().isoformat(), message)
 
 class TransactionFilter(FilterSet):
     description__icontains = CharFilter(field_name='description', lookup_expr='icontains')
@@ -118,6 +127,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # Import here to avoid circular imports
+        from .utils import get_cached_rules
+
+        # Preload rules cache before processing CSV
+        # This ensures we only fetch rules once for the entire upload
+        _ = get_cached_rules()
+
         csv_file = serializer.validated_data['file']
         # Wrap binary file in TextIOWrapper to handle CSV reading
         text_file = TextIOWrapper(csv_file.file, encoding='utf-8')
@@ -140,6 +156,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         for row_num, row in enumerate(reader, start=1):
             try:
                 # Use the utility function to create transaction with flags
+                # Rules will be fetched from cache due to the preloading above
                 transaction, flags = create_transaction_with_flags(row)
                 created_transactions.append(transaction)
                 

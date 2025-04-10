@@ -182,22 +182,58 @@ def validate_transaction_data(data):
     
     return cleaned_data, flags
 
-def apply_transaction_rules(transaction_data):
+# Cache for storing transaction rules
+_rules_cache = {
+    'rules': None,
+    'last_updated': None
+}
+
+def invalidate_rules_cache():
+    """Reset the rules cache, forcing a reload on next access."""
+    _rules_cache['rules'] = None
+    _rules_cache['last_updated'] = None
+
+def get_cached_rules(max_age_seconds=60):
+    """
+    Get transaction rules from cache or database if cache is outdated.
+    
+    Args:
+        max_age_seconds: Maximum age of cache in seconds before refreshing
+        
+    Returns:
+        List of TransactionRule objects
+    """
+    from .models import TransactionRule
+    import time
+    
+    current_time = time.time()
+    
+    # Check if we need to refresh the cache
+    if (_rules_cache['rules'] is None or 
+        _rules_cache['last_updated'] is None or 
+        current_time - _rules_cache['last_updated'] > max_age_seconds):
+        
+        # Fetch rules from database
+        _rules_cache['rules'] = list(TransactionRule.objects.all())
+        _rules_cache['last_updated'] = current_time
+    
+    return _rules_cache['rules']
+
+def apply_transaction_rules(transaction_data, use_cache=True):
     """
     Apply transaction rules to a transaction data dictionary.
     
     Args:
         transaction_data: Dictionary containing transaction data
+        use_cache: Whether to use the rules cache (default: True)
         
     Returns:
         tuple: (modified transaction data, list of applied rule flags)
     """
-    from .models import TransactionRule
-    
     applied_rule_flags = []
     
-    # Get all active rules
-    rules = TransactionRule.objects.all()
+    # Get rules (either from cache or directly from the database)
+    rules = get_cached_rules() if use_cache else list(TransactionRule.objects.all())
     
     for rule in rules:
         rule_matches = True

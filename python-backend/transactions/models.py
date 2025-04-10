@@ -1,5 +1,5 @@
 from django.db import models
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_save, pre_delete
 from django.dispatch import receiver
 
 class Transaction(models.Model):
@@ -121,3 +121,16 @@ class TransactionRule(models.Model):
         if parts and actions:
             return f"Rule: If {' and '.join(parts)}, then {' and '.join(actions)}"
         return f"Rule #{self.pk}"
+
+# Signals to invalidate the rule cache when rules are modified or deleted
+@receiver(post_save, sender=TransactionRule)
+def invalidate_rule_cache_on_save(sender, instance, **kwargs):
+    # Import here to avoid circular imports
+    from .utils import invalidate_rules_cache
+    invalidate_rules_cache()
+
+@receiver(pre_delete, sender=TransactionRule)
+def invalidate_rule_cache_on_delete(sender, instance, **kwargs):
+    # Import here to avoid circular imports
+    from .utils import invalidate_rules_cache
+    invalidate_rules_cache()

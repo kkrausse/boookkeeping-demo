@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FilterParams, TransactionRule, createTransactionRule } from '../api/transactions';
+import { FilterParams, TransactionRule, createTransactionRule, CreateRuleParams } from '../api/transactions';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Check, Save, Loader2 } from 'lucide-react';
 import { ActionInputs, ActionData } from './ActionInputs';
@@ -34,6 +34,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Rule creation state
   const [isAddingRule, setIsAddingRule] = useState(false);
   const [actionData, setActionData] = useState<ActionData>({});
+  const [applyToAll, setApplyToAll] = useState(false);
 
   // Update local filters when props change
   useEffect(() => {
@@ -71,9 +72,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Toggle rule creation mode
   const toggleRuleCreation = () => {
     setIsAddingRule(!isAddingRule);
-    // Reset action data when toggling
+    // Reset action data and apply to all when toggling
     if (!isAddingRule) {
       setActionData({});
+      setApplyToAll(false);
     }
   };
 
@@ -86,15 +88,25 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   const createRuleMutation = useMutation({
     mutationFn: createTransactionRule,
     onSuccess: (data) => {
-      // Show success notification
-      showNotification('success', `Rule created successfully`);
+      // Customize message based on whether we applied to all
+      const successMessage = applyToAll 
+        ? 'Rule created and applied to all transactions' 
+        : 'Rule created successfully';
+        
+      showNotification('success', successMessage);
       
       // Reset rule creation state
       setIsAddingRule(false);
       setActionData({});
+      setApplyToAll(false);
       
-      // Invalidate rules queries to refresh data
+      // Invalidate rules and transactions queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      
+      // If we applied the rule to all transactions, also invalidate transactions
+      if (applyToAll) {
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      }
     },
     onError: (error) => {
       // Show error notification
@@ -128,8 +140,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       return;
     }
 
-    // Execute the mutation
-    createRuleMutation.mutate(ruleData);
+    // Execute the mutation with the rule data and apply to all flag
+    createRuleMutation.mutate({
+      rule: ruleData,
+      applyToAll: applyToAll
+    });
   };
 
   return (
@@ -252,6 +267,21 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             />
           </div>
           
+          <div className="rule-options">
+            <div className="apply-all-option">
+              <input
+                type="checkbox"
+                id="apply-all-checkbox"
+                checked={applyToAll}
+                onChange={(e) => setApplyToAll(e.target.checked)}
+                disabled={createRuleMutation.isPending}
+              />
+              <label htmlFor="apply-all-checkbox">
+                Apply to all existing transactions
+              </label>
+            </div>
+          </div>
+          
           <div className="rule-actions">
             <button 
               className="create-rule-button"
@@ -261,12 +291,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               {createRuleMutation.isPending ? (
                 <>
                   <Loader2 className="spinner-icon" size={16} />
-                  Creating...
+                  {applyToAll ? "Creating & Applying..." : "Creating..."}
                 </>
               ) : (
                 <>
                   <Save size={16} />
-                  Create Rule
+                  {applyToAll ? "Create & Apply Rule" : "Create Rule"}
                 </>
               )}
             </button>

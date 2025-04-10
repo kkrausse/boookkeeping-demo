@@ -267,9 +267,22 @@ export interface TransactionRule {
   updated_at?: string;
 }
 
-export async function createTransactionRule(rule: TransactionRule): Promise<TransactionRule> {
-  const response = await api.post('/rules/', rule);
-  return response.data;
+export interface CreateRuleParams {
+  rule: TransactionRule;
+  applyToAll?: boolean;
+}
+
+export async function createTransactionRule(params: CreateRuleParams): Promise<TransactionRule> {
+  // First create the rule
+  const response = await api.post('/rules/', params.rule);
+  const createdRule = response.data;
+  
+  // If applyToAll is true, apply the rule to all transactions
+  if (params.applyToAll && createdRule.id) {
+    await applyRuleToAll(createdRule.id);
+  }
+  
+  return createdRule;
 }
 
 export async function fetchTransactionRules(): Promise<{ data: PaginatedResponse<TransactionRule> }> {

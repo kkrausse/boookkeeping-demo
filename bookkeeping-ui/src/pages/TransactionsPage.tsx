@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import {
   QueryClient,
-  keepPreviousData,
   useMutation,
-  useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
@@ -21,7 +19,8 @@ import {
   PaginatedResponse,
   FetchTransactionsParams,
   FilterParams,
-  UploadCSVResponse
+  UploadCSVResponse,
+  useTransactions
 } from '../api/transactions';
 import { TransactionTable } from '../components/TransactionTable';
 
@@ -194,11 +193,7 @@ export function TransactionsPage() {
   };
 
   // Fetch transactions with pagination
-  const { data, isLoading, error } = useQuery<PaginatedResponse<Transaction>, Error>({
-    queryKey: TRANSACTION_KEYS.paginated(queryParams),
-    queryFn: () => fetchTransactions(queryParams).then(r => r.data),
-    placeholderData: keepPreviousData
-  });
+  const { data, isLoading, error } = useTransactions(queryParams);
 
   const transactions: Transaction[] = data?.results || [];
   // Create a new transaction

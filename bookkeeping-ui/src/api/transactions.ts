@@ -341,3 +341,12 @@ export function useResolveTransactionFlag() {
     }
   });
 }
+
+// Hook for fetching transactions with pagination and filtering
+export function useTransactions(params: FetchTransactionsParams = {}) {
+  return useQuery<PaginatedResponse<Transaction>, Error>({
+    queryKey: TRANSACTION_KEYS.paginated(params),
+    queryFn: () => fetchTransactions(params).then(r => r.data),
+    placeholderData: keepPreviousData
+  });
+}

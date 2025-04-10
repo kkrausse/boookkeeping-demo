@@ -28,6 +28,7 @@ export async function uploadCSV(file: File): Promise<UploadCSVResponse> {
   formData.append('file', file);
   
   try {
+    setLongOperationInProgress(true);
     // Make the POST request with form data
     const response = await api.post('/transactions/upload/', formData, {
       headers: {
@@ -41,6 +42,8 @@ export async function uploadCSV(file: File): Promise<UploadCSVResponse> {
       return error.response.data;
     }
     throw error;
+  } finally {
+    setLongOperationInProgress(false);
   }
 }
 
@@ -278,6 +281,7 @@ export async function createTransactionRule(params: CreateRuleParams): Promise<T
   const createdRule = response.data;
   
   // If applyToAll is true, apply the rule to all transactions
+  // Note: We don't need to set the long operation flag here since applyRuleToAll already does it
   if (params.applyToAll && createdRule.id) {
     await applyRuleToAll(createdRule.id);
   }
@@ -305,13 +309,23 @@ export interface RuleApplyResponse {
 }
 
 export async function applyRuleToAll(ruleId: number): Promise<RuleApplyResponse> {
-  const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
-  return response.data;
+  try {
+    setLongOperationInProgress(true);
+    const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
+    return response.data;
+  } finally {
+    setLongOperationInProgress(false);
+  }
 }
 
 export async function applyAllRules(): Promise<RuleApplyResponse> {
-  const response = await api.post('/rules/apply_all_rules/');
-  return response.data;
+  try {
+    setLongOperationInProgress(true);
+    const response = await api.post('/rules/apply_all_rules/');
+    return response.data;
+  } finally {
+    setLongOperationInProgress(false);
+  }
 }
 
 // Direct API call function for resolving flags
@@ -342,11 +356,25 @@ export function useResolveTransactionFlag() {
   });
 }
 
+// Global flag to track long-running operations
+let isLongOperationInProgress = false;
+
+// Functions to control the long-running operation state
+export function setLongOperationInProgress(value: boolean) {
+  isLongOperationInProgress = value;
+}
+
+export function isLongOperationActive() {
+  return isLongOperationInProgress;
+}
+
 // Hook for fetching transactions with pagination and filtering
 export function useTransactions(params: FetchTransactionsParams = {}) {
   return useQuery<PaginatedResponse<Transaction>, Error>({
     queryKey: TRANSACTION_KEYS.paginated(params),
     queryFn: () => fetchTransactions(params).then(r => r.data),
-    placeholderData: keepPreviousData
+    placeholderData: keepPreviousData,
+    // Set a faster polling rate when long operations are in progress
+    refetchInterval: isLongOperationInProgress ? 1000 : false
   });
 }

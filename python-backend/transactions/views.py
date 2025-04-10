@@ -10,7 +10,7 @@ from datetime import datetime
 import pytz
 from .models import Transaction, TransactionFlag, TransactionRule
 from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
-from .utils import create_transaction_with_flags, update_transaction_with_flags
+from .utils import create_transaction_with_flags, update_transaction_with_flags, log_info
 
 class TransactionFilter(FilterSet):
     description__icontains = CharFilter(field_name='description', lookup_expr='icontains')
@@ -114,6 +114,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], serializer_class=TransactionCSVSerializer,
             parser_classes=[parsers.MultiPartParser])
     def upload(self, request, *args, **kwargs):
+        log_info('starting')
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -134,7 +135,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
         created_transactions = []
         skipped_rows = []
         warnings = []
-        
+
+        log_info('iterating')
         for row_num, row in enumerate(reader, start=1):
             try:
                 # Use the utility function to create transaction with flags
@@ -157,16 +159,19 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 
                 skipped_rows.append(f"Row {row_num}: {error_msg}")
 
+        log_info('serializing')
         # Serialize the created transactions
         transaction_serializer = TransactionSerializer(created_transactions, many=True)
 
+        log_info('resp')
         response_data = {
             "created": transaction_serializer.data,
             "created_count": len(created_transactions),
             "warnings": warnings if warnings else None,
             "errors": skipped_rows if skipped_rows else None
         }
-        
+
+        log_info('boom')
         if created_transactions:
             if skipped_rows:
                 status_code = status.HTTP_207_MULTI_STATUS

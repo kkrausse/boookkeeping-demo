@@ -3,6 +3,9 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 
+def log_info(*args):
+    print(datetime.now().isoformat(), *args)
+
 def parse_amount(amount_str):
     """
     Parse an amount string into a Decimal, handling errors gracefully.

@@ -61,19 +61,40 @@ def create_duplicate_flag(sender, instance, created, **kwargs):
     if instance.amount is not None:
         filter_dict['amount'] = instance.amount
     
-    # Check for duplicates
-    if Transaction.objects.filter(**filter_dict).exclude(pk=instance.pk).exists():
-        duplicate = Transaction.objects.filter(**filter_dict).exclude(pk=instance.pk).first()
-
+    # Find potential duplicates
+    duplicates = Transaction.objects.filter(**filter_dict).exclude(pk=instance.pk)
+    
+    # If duplicates exist, create flags for both this transaction and all duplicates
+    if duplicates.exists():
+        # Create a flag for this transaction pointing to the first duplicate
+        first_duplicate = duplicates.first()
         TransactionFlag.objects.update_or_create(
             transaction=instance,
             flag_type='DUPLICATE',
             defaults={
-                'duplicates_transaction': duplicate,
-                'message': f'Possible duplicate of transaction {duplicate.id}',
+                'duplicates_transaction': first_duplicate,
+                'message': f'Possible duplicate of transaction {first_duplicate.id}',
                 'is_resolvable': True
             }
         )
+        
+        # Create flags for all duplicates pointing to this transaction
+        for duplicate in duplicates:
+            TransactionFlag.objects.update_or_create(
+                transaction=duplicate,
+                flag_type='DUPLICATE',
+                defaults={
+                    'duplicates_transaction': instance,
+                    'message': f'Possible duplicate of transaction {instance.id}',
+                    'is_resolvable': True
+                }
+            )
+    elif not created:  # If this is an update and no duplicates exist
+        # Clear duplicate flags for other transactions that pointed to this one
+        TransactionFlag.objects.filter(
+            duplicates_transaction=instance,
+            flag_type='DUPLICATE'
+        ).delete()
         
 class TransactionRule(models.Model):
     COMPARISON_CHOICES = [

@@ -545,30 +545,7 @@ def update_transaction_with_flags(transaction, data):
         setattr(transaction, key, value)
     transaction.save()
     
-    # Check for transactions that have this transaction as a duplicate
-    # If the transaction data has changed, we need to re-evaluate those flags
-    if (old_description != transaction.description or
-        old_amount != transaction.amount or
-        old_category != transaction.category):
-
-        # Find flags that mark other transactions as duplicates of this one
-        referring_flags = TransactionFlag.objects.filter(
-            duplicates_transaction=transaction,
-            flag_type='DUPLICATE'
-        )
-
-        # For each referring flag, re-check if it's still a duplicate
-        for flag in referring_flags:
-            other_transaction = flag.transaction
-
-            # Check if other transaction is still a duplicate of this one
-            if (other_transaction.description == transaction.description and
-                other_transaction.amount == transaction.amount):
-                # Still a duplicate, keep the flag
-                pass
-            else:
-                # No longer a duplicate, remove the flag
-                flag.delete()
+    # The post_save signal handler will automatically update all duplicate flags
     
     # Combine all flags
     all_flags = validation_flags + rule_flags

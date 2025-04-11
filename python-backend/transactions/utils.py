@@ -335,7 +335,7 @@ def determine_flag_resolvability(flag_data):
     
     # MISSING_DATA flags are resolvable for updates but not for creations
     elif flag_type == 'MISSING_DATA':
-        return True
+        return False
     
     # PARSE_ERROR flags are not resolvable
     return False

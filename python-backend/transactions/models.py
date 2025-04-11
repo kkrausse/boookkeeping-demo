@@ -56,12 +56,12 @@ def check_duplicates(sender, instance, **kwargs):
 @receiver(post_save, sender=Transaction)
 def create_duplicate_flag(sender, instance, created, **kwargs):
     # Create a filter dictionary with non-null values
-    filter_dict = {'description': instance.description, 'category': instance.category}
+    filter_dict = {'description': instance.description, 'amount': instance.amount}
     
     # Only add amount to the filter if it's not None
-    if instance.amount is not None:
-        filter_dict['amount'] = instance.amount
-    
+    if instance.amount is None:
+        return
+
     # Find potential duplicates
     duplicates = Transaction.objects.filter(**filter_dict).exclude(pk=instance.pk)
     

@@ -118,50 +118,37 @@ def parse_datetime(date_str):
         pass
     
     # Could not parse the date with any method
-    return timezone.now(), {
+    return None, {
         'flag_type': 'PARSE_ERROR',
         'message': f"Could not parse date: '{date_str}'"
     }
 
-def validate_transaction_data(data):
+def clean_transaction_data(data):
     """
-    Validate transaction data and generate appropriate flags.
+    Clean and parse transaction data without validation/flags.
     
     Args:
         data: Dictionary containing transaction data
         
     Returns:
-        tuple: (cleaned_data, list of flag dictionaries)
+        dict: Cleaned data dictionary with parsed values
     """
-    flags = []
     cleaned_data = {}
     
     # Process description
     description = data.get('description', '').strip()
     cleaned_data['description'] = description
     
-    # Flag blank descriptions
-    if not description:
-        flags.append({
-            'flag_type': 'MISSING_DATA',
-            'message': "Missing or blank description"
-        })
-    
     # Process category
     category = data.get('category', '').strip()
     cleaned_data['category'] = category
-    
-    # Note: We don't flag missing categories here anymore.
-    # This will be done after rules are applied, if still needed.
     
     # Process amount
     amount_str = data.get('amount', '')
     if isinstance(amount_str, (int, float, Decimal)):
         amount_str = str(amount_str)
-    amount, amount_flag = parse_amount(amount_str)
+    amount, _ = parse_amount(amount_str)
     cleaned_data['amount'] = amount
-    if amount_flag:
-        flags.append(amount_flag)
     
     # Process datetime
     date_str = data.get('datetime', '')
@@ -171,16 +158,54 @@ def validate_transaction_data(data):
             date_str = timezone.make_aware(date_str)
         cleaned_data['datetime'] = date_str
     else:
-        dt, date_flag = parse_datetime(str(date_str) if date_str else '')
+        dt, _ = parse_datetime(str(date_str) if date_str else '')
         cleaned_data['datetime'] = dt
+    
+    return cleaned_data
+
+def transaction_validation_flags(cleaned_data, original_data):
+    """
+    Generate validation flags for transaction data
+    
+    Args:
+        cleaned_data: Dictionary containing parsed/cleaned data
+        original_data: Original unprocessed data for error messages
+        
+    Returns:
+        list: List of flag dictionaries
+    """
+    flags = []
+    
+    # Flag blank descriptions
+    if not cleaned_data.get('description'):
+        flags.append({
+            'flag_type': 'MISSING_DATA',
+            'message': "Missing or blank description"
+        })
+    
+    # Flag missing category
+    if not cleaned_data.get('category'):
+        flags.append({
+            'flag_type': 'MISSING_DATA',
+            'message': "Missing category"
+        })
+    
+    # Add amount parsing error flag if any
+    amount_str = original_data.get('amount', '')
+    if isinstance(amount_str, (int, float, Decimal)):
+        amount_str = str(amount_str)
+    _, amount_flag = parse_amount(amount_str)
+    if amount_flag:
+        flags.append(amount_flag)
+    
+    # Add datetime parsing error flag if any
+    date_str = original_data.get('datetime', '')
+    if not isinstance(date_str, datetime):
+        _, date_flag = parse_datetime(str(date_str) if date_str else '')
         if date_flag:
             flags.append(date_flag)
     
-    # Validate that we have at least some valid data
-    if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
-        raise ValueError("Transaction must have at least a description, category, or valid amount")
-    
-    return cleaned_data, flags
+    return flags
 
 # Cache for storing transaction rules
 _rules_cache = {
@@ -230,6 +255,8 @@ def apply_transaction_rules(transaction_data, use_cache=True):
     Returns:
         tuple: (modified transaction data, list of applied rule flags)
     """
+    from .models import TransactionRule
+    
     applied_rule_flags = []
     
     # Get rules (either from cache or directly from the database)
@@ -275,6 +302,170 @@ def apply_transaction_rules(transaction_data, use_cache=True):
     
     return transaction_data, applied_rule_flags
 
+def determine_flag_resolvability(flag_data):
+    """
+    Determine if a transaction flag is resolvable based on its type.
+    
+    Args:
+        flag_data: Dictionary containing flag data
+        
+    Returns:
+        bool: Whether the flag is resolvable
+    """
+    flag_type = flag_data['flag_type']
+    
+    # These flag types are resolvable
+    if flag_type in ['RULE_MATCH', 'DUPLICATE', 'CUSTOM']:
+        return True
+    
+    # MISSING_DATA flags are resolvable for updates but not for creations
+    elif flag_type == 'MISSING_DATA':
+        return True
+    
+    # PARSE_ERROR flags are not resolvable
+    return False
+
+def create_transaction_flags(transaction, flags):
+    """
+    Create TransactionFlag objects for a transaction
+    
+    Args:
+        transaction: Transaction object
+        flags: List of flag dictionaries
+        
+    Returns:
+        list: The flags that were created
+    """
+    from .models import TransactionFlag
+    
+    created_flags = []
+    
+    for flag_data in flags:
+        # Skip flags we already created
+        if flag_data.get('created', False):
+            continue
+            
+        # Determine if the flag is resolvable based on its type
+        is_resolvable = determine_flag_resolvability(flag_data)
+            
+        TransactionFlag.objects.create(
+            transaction=transaction,
+            flag_type=flag_data['flag_type'],
+            message=flag_data['message'],
+            is_resolvable=is_resolvable
+        )
+        
+        # Mark this flag as created
+        flag_data['created'] = True
+        created_flags.append(flag_data)
+    
+    return created_flags
+
+def merge_transaction_update(transaction, data):
+    """
+    Merge updated data into an existing transaction object.
+    
+    Args:
+        transaction: Existing Transaction object
+        data: Dictionary containing update data
+        
+    Returns:
+        dict: Merged data dictionary ready for processing
+    """
+    # Create a dictionary from the existing transaction
+    merged_data = {
+        'description': transaction.description,
+        'category': transaction.category,
+        'amount': transaction.amount,
+        'datetime': transaction.datetime
+    }
+    
+    # Handle both dictionary and QueryDict types for data
+    if hasattr(data, 'dict'):
+        data = data.dict()
+    
+    # Make a copy of the data so we don't modify the original
+    data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+    
+    # Extract custom flag if present (not part of transaction data)
+    custom_flag = None
+    if 'custom_flag' in data_copy:
+        custom_flag = data_copy.pop('custom_flag')
+    
+    # Update merged data with non-empty values from the update
+    for key, value in data_copy.items():
+        if key in merged_data and value not in (None, ''):
+            merged_data[key] = value
+    
+    return merged_data, custom_flag
+
+def process_custom_flag(custom_flag, transaction, all_flags):
+    """
+    Process a custom flag to be added to a transaction
+    
+    Args:
+        custom_flag: Custom flag data
+        transaction: Transaction object
+        all_flags: List of all flags
+        
+    Returns:
+        None, modifies all_flags in place
+    """
+    from .models import TransactionFlag
+    
+    if not custom_flag:
+        return
+        
+    # Convert to dictionary if it's a QueryDict or string
+    if hasattr(custom_flag, 'dict'):
+        custom_flag = custom_flag.dict()
+    elif isinstance(custom_flag, str):
+        import json
+        try:
+            custom_flag = json.loads(custom_flag)
+        except json.JSONDecodeError:
+            custom_flag = {'message': custom_flag}
+    
+    flag_type = custom_flag.get('flag_type', 'CUSTOM')
+    message = custom_flag.get('message', '')
+    is_resolvable = custom_flag.get('is_resolvable', True)
+    
+    if message:  # Only create if there's a message
+        TransactionFlag.objects.create(
+            transaction=transaction,
+            flag_type=flag_type,
+            message=message,
+            is_resolvable=is_resolvable
+        )
+        
+        # Add to our list of flags to return
+        all_flags.append({
+            'flag_type': flag_type,
+            'message': message,
+            'is_resolvable': is_resolvable,
+            'created': True
+        })
+
+def validate_transaction_data(data):
+    """
+    Validate transaction data and generate appropriate flags.
+    This function is kept for backward compatibility.
+    
+    Args:
+        data: Dictionary containing transaction data
+        
+    Returns:
+        tuple: (cleaned_data, list of flag dictionaries)
+    """
+    cleaned_data = clean_transaction_data(data)
+    flags = transaction_validation_flags(cleaned_data, data)
+    
+    # Validate that we have at least some valid data
+    if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
+        raise ValueError("Transaction must have at least a description, category, or valid amount")
+    
+    return cleaned_data, flags
+
 def create_transaction_with_flags(data):
     """
     Create a transaction from data, apply rules, and handle flags.
@@ -285,23 +476,20 @@ def create_transaction_with_flags(data):
     Returns:
         tuple: (transaction object, list of flag dictionaries)
     """
-    from .models import Transaction, TransactionFlag
+    from .models import Transaction
+
+    # Clean the data
+    cleaned_data = clean_transaction_data(data)
     
-    # Validate and clean data
-    cleaned_data, validation_flags = validate_transaction_data(data)
-    
-    # Apply transaction rules before creating flags
-    # This ensures rules are applied before flag checks (like duplicates)
+    # Apply transaction rules 
     cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
     
-    # Now check for missing category AFTER rules have been applied
-    # This way, if a rule provided a category, we won't flag it as missing
-    if not cleaned_data.get('category'):
-        missing_category_flag = {
-            'flag_type': 'MISSING_DATA',
-            'message': "Missing category"
-        }
-        validation_flags.append(missing_category_flag)
+    # Generate validation flags after rule application
+    validation_flags = transaction_validation_flags(cleaned_data, data)
+    
+    # Validate that we have at least some valid data
+    if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
+        raise ValueError("Transaction must have at least a description, category, or valid amount")
     
     # Create transaction
     transaction = Transaction(**cleaned_data)
@@ -311,34 +499,7 @@ def create_transaction_with_flags(data):
     all_flags = validation_flags + rule_flags
     
     # Create flags
-    for flag_data in all_flags:
-        # Determine if the flag is resolvable based on its type
-        is_resolvable = False
-        
-        # RULE_MATCH flags (from transaction rules) are resolvable
-        if flag_data['flag_type'] == 'RULE_MATCH':
-            is_resolvable = True
-        
-        # MISSING_DATA flags are resolvable
-        elif flag_data['flag_type'] == 'MISSING_DATA':
-            is_resolvable = False
-        
-        # DUPLICATE flags are resolvable
-        elif flag_data['flag_type'] == 'DUPLICATE':
-            is_resolvable = True
-            
-        # CUSTOM flags are resolvable
-        elif flag_data['flag_type'] == 'CUSTOM':
-            is_resolvable = True
-        
-        # PARSE_ERROR flags are NOT resolvable (default is False)
-            
-        TransactionFlag.objects.create(
-            transaction=transaction,
-            flag_type=flag_data['flag_type'],
-            message=flag_data['message'],
-            is_resolvable=is_resolvable
-        )
+    create_transaction_flags(transaction, all_flags)
     
     return transaction, all_flags
 
@@ -353,47 +514,19 @@ def update_transaction_with_flags(transaction, data):
     Returns:
         tuple: (updated transaction object, list of flag dictionaries)
     """
-    from .models import TransactionFlag, Transaction
+    from .models import TransactionFlag
     
-    # Handle both dictionary and QueryDict types for data
-    if hasattr(data, 'dict'):
-        data = data.dict()
+    # Merge the existing transaction data with the update
+    merged_data, custom_flag = merge_transaction_update(transaction, data)
     
-    # Make a copy of the data so we don't modify the original
-    data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
-    
-    # Check for custom flag in the data
-    custom_flag = None
-    if 'custom_flag' in data_copy:
-        custom_flag = data_copy.pop('custom_flag')
-    
-    # Validate and clean data
-    cleaned_data, validation_flags = validate_transaction_data(data_copy)
-    
-    # For PATCH requests, preserve existing values if not provided
-    if transaction.description and not cleaned_data.get('description'):
-        cleaned_data['description'] = transaction.description
-    
-    if transaction.category and not cleaned_data.get('category'):
-        cleaned_data['category'] = transaction.category
-    
-    if transaction.amount is not None and cleaned_data.get('amount') is None:
-        cleaned_data['amount'] = transaction.amount
-    
-    if transaction.datetime and not cleaned_data.get('datetime'):
-        cleaned_data['datetime'] = transaction.datetime
+    # Clean the merged data
+    cleaned_data = clean_transaction_data(merged_data)
     
     # Apply transaction rules
     cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
     
-    # Now check for missing category AFTER rules have been applied
-    # This way, if a rule provided a category, we won't flag it as missing
-    if not cleaned_data.get('category'):
-        missing_category_flag = {
-            'flag_type': 'MISSING_DATA',
-            'message': "Missing category"
-        }
-        validation_flags.append(missing_category_flag)
+    # Generate validation flags after rule application
+    validation_flags = transaction_validation_flags(cleaned_data, merged_data)
     
     # Clear existing parse error, missing data, and rule match flags
     # Keep custom flags intact
@@ -414,20 +547,20 @@ def update_transaction_with_flags(transaction, data):
     
     # Check for transactions that have this transaction as a duplicate
     # If the transaction data has changed, we need to re-evaluate those flags
-    if (old_description != transaction.description or 
-        old_amount != transaction.amount or 
+    if (old_description != transaction.description or
+        old_amount != transaction.amount or
         old_category != transaction.category):
-        
+
         # Find flags that mark other transactions as duplicates of this one
         referring_flags = TransactionFlag.objects.filter(
             duplicates_transaction=transaction,
             flag_type='DUPLICATE'
         )
-        
+
         # For each referring flag, re-check if it's still a duplicate
         for flag in referring_flags:
             other_transaction = flag.transaction
-            
+
             # Check if other transaction is still a duplicate of this one
             if (other_transaction.description == transaction.description and
                 other_transaction.amount == transaction.amount):
@@ -440,73 +573,10 @@ def update_transaction_with_flags(transaction, data):
     # Combine all flags
     all_flags = validation_flags + rule_flags
     
-    # Add the custom flag if provided
-    if custom_flag:
-        # Convert to dictionary if it's a QueryDict or string
-        if hasattr(custom_flag, 'dict'):
-            custom_flag = custom_flag.dict()
-        elif isinstance(custom_flag, str):
-            import json
-            try:
-                custom_flag = json.loads(custom_flag)
-            except json.JSONDecodeError:
-                custom_flag = {'message': custom_flag}
-        
-        flag_type = custom_flag.get('flag_type', 'CUSTOM')
-        message = custom_flag.get('message', '')
-        is_resolvable = custom_flag.get('is_resolvable', True)
-        
-        if message:  # Only create if there's a message
-            TransactionFlag.objects.create(
-                transaction=transaction,
-                flag_type=flag_type,
-                message=message,
-                is_resolvable=is_resolvable
-            )
-            
-            # Add to our list of flags to return
-            all_flags.append({
-                'flag_type': flag_type,
-                'message': message,
-                'is_resolvable': is_resolvable,
-                'created': True
-            })
+    # Process custom flag if provided
+    process_custom_flag(custom_flag, transaction, all_flags)
     
-    # Create new flags
-    for flag_data in all_flags:
-        if flag_data.get('created', False):
-            # Skip flags we already created (like custom flags)
-            continue
-            
-        # Determine if the flag is resolvable based on its type
-        is_resolvable = False
-        
-        # RULE_MATCH flags (from transaction rules) are resolvable
-        if flag_data['flag_type'] == 'RULE_MATCH':
-            is_resolvable = True
-        
-        # MISSING_DATA flags are resolvable
-        elif flag_data['flag_type'] == 'MISSING_DATA':
-            is_resolvable = True
-        
-        # DUPLICATE flags are resolvable
-        elif flag_data['flag_type'] == 'DUPLICATE':
-            is_resolvable = True
-        
-        # CUSTOM flags are resolvable
-        elif flag_data['flag_type'] == 'CUSTOM':
-            is_resolvable = True
-        
-        # PARSE_ERROR flags are NOT resolvable (default is False)
-            
-        TransactionFlag.objects.create(
-            transaction=transaction,
-            flag_type=flag_data['flag_type'],
-            message=flag_data['message'],
-            is_resolvable=is_resolvable
-        )
-        
-        # Mark this flag as created so we don't create it again
-        flag_data['created'] = True
+    # Create flags
+    create_transaction_flags(transaction, all_flags)
     
     return transaction, all_flags

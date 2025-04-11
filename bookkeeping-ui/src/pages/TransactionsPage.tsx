@@ -36,7 +36,7 @@ function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) 
   const [showResults, setShowResults] = useState(false);
   
   // Use the refactored CSV upload hook with polling
-  const { mutate: fileMutate, isLoading: isUploading } = useCSVUpload({
+  const { mutate: fileMutate, isPending: isUploading } = useCSVUpload({
     // We can customize the polling interval if needed (default is 1000ms)
     pollingInterval: 1000,
     // Called when mutation starts
@@ -116,7 +116,14 @@ function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) 
       <div className="csv-upload-header">
         <h3>Import Transactions</h3>
         <label className="csv-upload-button">
-          {isUploading ? 'Uploading...' : 'Choose CSV file'}
+          {isUploading ? (
+            <>
+              <Loader2 className="spinner-icon" size={16} />
+              <span>Uploading...</span>
+            </>
+          ) : (
+            <span>Choose CSV file</span>
+          )}
           <input 
             type="file" 
             accept=".csv" 
@@ -126,6 +133,13 @@ function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) 
           />
         </label>
       </div>
+      
+      {isUploading && (
+        <div className="upload-progress">
+          <Loader2 className="spinner-icon" size={24} />
+          <span>Uploading and processing CSV file... Real-time updates will appear as transactions are processed.</span>
+        </div>
+      )}
       
       {showResults && uploadResult && (
         <div className="upload-results">

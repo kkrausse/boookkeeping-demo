@@ -217,12 +217,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     if (!transaction || !transaction.flags) {
       return { activeFlags: [], resolvedFlagsCount: localResolvedFlags.length };
     }
-    
-    // Log flags for debugging
-    if (transaction.flags.length > 0) {
-      console.log('Transaction Flags:', JSON.stringify(transaction.flags, null, 2));
-    }
-    
+
     return {
       activeFlags: transaction.flags,
       resolvedFlagsCount: localResolvedFlags.length

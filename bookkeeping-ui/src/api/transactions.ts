@@ -363,6 +363,35 @@ export function useResolveTransactionFlag() {
   });
 }
 
+// Hook for CSV upload with react-query
+export interface CSVUploadOptions {
+  onSuccess?: (data: UploadCSVResponse) => void;
+  onError?: (error: Error) => void;
+}
+
+export function useCSVUpload(options: CSVUploadOptions = {}) {
+  const queryClient = useQueryClient();
+  
+  return useMutation<UploadCSVResponse, Error, File>({
+    mutationFn: uploadCSV,
+    onSuccess: (data) => {
+      // Invalidate transactions queries to update lists
+      queryClient.invalidateQueries({queryKey: ['transactions']});
+      
+      // Call the success callback if provided
+      if (options.onSuccess) {
+        options.onSuccess(data);
+      }
+    },
+    onError: (error) => {
+      // Call the error callback if provided
+      if (options.onError) {
+        options.onError(error);
+      }
+    }
+  });
+}
+
 // Global flag to track long-running operations
 let isLongOperationInProgress = false;
 

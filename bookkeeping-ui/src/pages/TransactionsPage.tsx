@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  QueryClient,
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query'
@@ -12,7 +11,6 @@ import {
   deleteTransaction, 
   createTransaction,
   updateTransaction,
-  uploadCSV, 
   TRANSACTION_KEYS,
   TransactionSort,
   TransactionSortColumn,
@@ -21,6 +19,7 @@ import {
   FilterParams,
   UploadCSVResponse,
   useTransactions,
+  useCSVUpload,
   setLongOperationInProgress,
   isLongOperationActive
 } from '../api/transactions';
@@ -33,15 +32,13 @@ interface CsvUploadProps {
 }
 
 function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) {
-  const queryClient = useQueryClient();
   const [uploadResult, setUploadResult] = useState<UploadCSVResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   
-  const { mutate: fileMutate } = useMutation<UploadCSVResponse, Error, File>({
-    mutationFn: uploadCSV,
+  // Use the refactored CSV upload hook
+  const { mutate: fileMutate } = useCSVUpload({
     onSuccess: (data) => {
-      queryClient.invalidateQueries({queryKey: ['transactions']});
       setUploadResult(data);
       setIsUploading(false);
       setShowResults(true);

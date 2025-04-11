@@ -14,7 +14,7 @@ import time
 import functools
 from .models import Transaction, TransactionFlag, TransactionRule
 from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
-from .utils import create_transaction_with_flags, update_transaction_with_flags, timer
+from .utils import create_transaction_with_flags, update_transaction_with_flags, timer, apply_transaction_rules
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -286,11 +286,7 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
     def apply_to_all(self, request, pk=None):
         """Apply this rule to all existing transactions."""
         rule = self.get_object()
-        
-        # Import here to avoid circular imports
-        from .utils import update_transaction_with_flags
-        from .models import Transaction, TransactionFlag
-        
+
         # Get all transactions
         transactions = Transaction.objects.all()
         total_count = transactions.count()
@@ -327,10 +323,7 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def apply_all_rules(self, request):
         """Apply all rules to all existing transactions."""
-        # Import here to avoid circular imports
-        from .utils import apply_transaction_rules, update_transaction_with_flags
-        from .models import Transaction
-        
+
         # Get all transactions
         transactions = Transaction.objects.all()
         total_count = transactions.count()

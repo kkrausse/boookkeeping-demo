@@ -3,8 +3,23 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
 def log_info(*args):
-    print(datetime.now().isoformat(), *args)
+    logger.info(' '.join(str(arg) for arg in args))
+
+def timer(func):
+    """Decorator to time functions and log execution time"""
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        duration = time.time() - start_time
+        logger.info(f"Operation '{func.__name__}' completed in {duration:.3f}s")
+        return result
+    return wrapper
 
 def parse_amount(amount_str):
     """

@@ -10,17 +10,44 @@ from django.db import models
 from datetime import datetime
 import pytz
 import logging
+import time
+import functools
 from .models import Transaction, TransactionFlag, TransactionRule
 from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
-from .utils import create_transaction_with_flags, update_transaction_with_flags
+from .utils import create_transaction_with_flags, update_transaction_with_flags, timer
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
-def log_info(message):
-    """Helper function for logging info messages."""
-    logger.info(message)
-    print(datetime.now().isoformat(), message)
+def api_timer(method):
+    """Decorator to time API methods with detailed request information"""
+    @functools.wraps(method)
+    def timed_method(self, request, *args, **kwargs):
+        start_time = time.time()
+        
+        # Get request details for logging
+        view_name = self.__class__.__name__
+        method_name = method.__name__
+        
+        result = method(self, request, *args, **kwargs)
+        
+        # Calculate duration and log
+        duration = time.time() - start_time
+        
+        # Get details about the request/response
+        request_method = request.method
+        path = request.path
+        status_code = result.status_code if hasattr(result, 'status_code') else 'N/A'
+        
+        # Log details
+        logger.info(
+            f"API call: {view_name}.{method_name} | {request_method} {path} | "
+            f"Status: {status_code} | Duration: {duration:.3f}s | "
+            f"Args: {args} | Kwargs: {kwargs}"
+        )
+        
+        return result
+    return timed_method
 
 class TransactionFilter(FilterSet):
     description__icontains = CharFilter(field_name='description', lookup_expr='icontains')
@@ -52,6 +79,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
         """
         Override get_queryset to add annotation for flag_count to enable sorting by flag count
         """
+        # Time queryset generation
+        start_time = time.time()
+        
         queryset = Transaction.objects.all()
         
         # Annotate with flag count for sorting by number of unresolved flags
@@ -60,8 +90,16 @@ class TransactionViewSet(viewsets.ModelViewSet):
         )
         
         # Apply default ordering
-        return queryset.order_by('-created_at')
+        result = queryset.order_by('-created_at')
+        
+        # Log duration for complex queries
+        duration = time.time() - start_time
+        if duration > 0.1:  # Only log if took more than 100ms
+            logger.info(f"Complex query took {duration:.3f}s: get_queryset {self.__class__.__name__}")
+            
+        return result
     
+    @api_timer
     @action(detail=True, methods=['post'], url_path='resolve-flag/(?P<flag_id>[^/.]+)')
     def resolve_flag(self, request, pk=None, flag_id=None):
         """
@@ -94,6 +132,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 'message': 'Flag not found'
             }, status=status.HTTP_404_NOT_FOUND)
     
+    @api_timer
     def create(self, request, *args, **kwargs):
         """Override create to handle flags."""
         try:
@@ -106,6 +145,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
+    @api_timer
     def update(self, request, *args, **kwargs):
         """Override update to handle flags."""
         instance = self.get_object()
@@ -121,6 +161,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
             
+    @api_timer
     def partial_update(self, request, *args, **kwargs):
         """Override partial_update to handle flags."""
         instance = self.get_object()
@@ -136,10 +177,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @api_timer
     @action(detail=False, methods=['post'], serializer_class=TransactionCSVSerializer,
             parser_classes=[parsers.MultiPartParser])
     def upload(self, request, *args, **kwargs):
-        log_info('starting')
+        start_time = time.time()
+        logger.info("Starting CSV upload")
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -168,8 +212,12 @@ class TransactionViewSet(viewsets.ModelViewSet):
         skipped_rows = []
         warnings = []
 
-        log_info('iterating')
+        logger.info(f"CSV parsing started at {time.time() - start_time:.3f}s")
+        row_count = 0
+        processing_start = time.time()
+        
         for row_num, row in enumerate(reader, start=1):
+            row_count += 1
             try:
                 # Use the utility function to create transaction with flags
                 # Rules will be fetched from cache due to the preloading above
@@ -192,11 +240,19 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 
                 skipped_rows.append(f"Row {row_num}: {error_msg}")
 
-        log_info('serializing')
+            # Log progress for large uploads
+            if row_count % 100 == 0:
+                logger.info(f"Processed {row_count} rows in {time.time() - processing_start:.3f}s")
+
+        processing_time = time.time() - processing_start
+        logger.info(f"CSV processing complete: {row_count} rows in {processing_time:.3f}s ({row_count/processing_time:.1f} rows/sec)")
+        
+        serialization_start = time.time()
         # Serialize the created transactions
         transaction_serializer = TransactionSerializer(created_transactions, many=True)
+        logger.info(f"Serialization took {time.time() - serialization_start:.3f}s")
 
-        log_info('resp')
+        # Prepare response
         response_data = {
             "created": transaction_serializer.data,
             "created_count": len(created_transactions),
@@ -204,7 +260,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
             "errors": skipped_rows if skipped_rows else None
         }
 
-        log_info('boom')
         if created_transactions:
             if skipped_rows:
                 status_code = status.HTTP_207_MULTI_STATUS
@@ -212,6 +267,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 status_code = status.HTTP_201_CREATED
         else:
             status_code = status.HTTP_400_BAD_REQUEST
+        
+        total_time = time.time() - start_time
+        logger.info(f"Upload complete: {len(created_transactions)} created, {len(skipped_rows)} errors in {total_time:.3f}s")
             
         return Response(response_data, status=status_code)
         
@@ -223,6 +281,7 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionRuleSerializer
     pagination_class = StandardResultsSetPagination
     
+    @api_timer
     @action(detail=True, methods=['post'])
     def apply_to_all(self, request, pk=None):
         """Apply this rule to all existing transactions."""
@@ -234,12 +293,14 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
         
         # Get all transactions
         transactions = Transaction.objects.all()
+        total_count = transactions.count()
         
         # Count of transactions updated
         updated_count = 0
+        start_time = time.time()
         
         # Process each transaction
-        for transaction in transactions:
+        for i, transaction in enumerate(transactions):
             # Use our existing utility function to make sure we're applying
             # rules consistently and updating flags properly
             data = {
@@ -252,12 +313,17 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
             # Update the transaction using our utility which handles rules and flags
             updated_tx, _ = update_transaction_with_flags(transaction, data)
             updated_count += 1
+
+        total_time = time.time() - start_time
+        logger.info(f"Rule {rule.id} applied to all transactions: {updated_count} updated in {total_time:.3f}s")
         
         return Response({
             'rule_id': rule.id,
-            'updated_count': updated_count
+            'updated_count': updated_count,
+            'time_taken': f"{total_time:.3f}s"
         })
     
+    @api_timer
     @action(detail=False, methods=['post'])
     def apply_all_rules(self, request):
         """Apply all rules to all existing transactions."""
@@ -267,12 +333,14 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
         
         # Get all transactions
         transactions = Transaction.objects.all()
+        total_count = transactions.count()
         
         # Count of transactions updated
         updated_count = 0
+        start_time = time.time()
         
         # Process each transaction
-        for transaction in transactions:
+        for i, transaction in enumerate(transactions):
             # Create a data dict from the transaction
             data = {
                 'description': transaction.description,
@@ -284,7 +352,18 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
             # Apply all rules and update the transaction
             updated_tx, _ = update_transaction_with_flags(transaction, data)
             updated_count += 1
+            
+            # Log progress for large batches
+            if i > 0 and i % 100 == 0:
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                remaining = (total_count - i) / rate if rate > 0 else 'unknown'
+                logger.info(f"Applied all rules to {i}/{total_count} transactions ({rate:.1f} tx/sec, ~{remaining:.1f}s remaining)")
+        
+        total_time = time.time() - start_time
+        logger.info(f"All rules applied to all transactions: {updated_count} updated in {total_time:.3f}s")
         
         return Response({
-            'updated_count': updated_count
+            'updated_count': updated_count,
+            'time_taken': f"{total_time:.3f}s"
         })

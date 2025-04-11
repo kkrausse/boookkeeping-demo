@@ -8,6 +8,59 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
+/**
+ * Custom hook that creates an interval timer to repeatedly call a function
+ * @param callback Function to call on each interval tick
+ * @param defaultInterval Default interval in milliseconds
+ * @returns [startPolling, stopPolling] functions
+ */
+export function usePollingEffect(callback: () => void, defaultInterval = 1000) {
+  // Use ref to store interval ID for cleanup
+  const intervalRef = useRef<number | null>(null);
+  
+  // Function to start the polling
+  const startPolling = useCallback((interval = defaultInterval) => {
+    console.log("Starting polling loop");
+    
+    // Clean up any existing interval first
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+    }
+    
+    // Set up a new interval
+    const newIntervalId = window.setInterval(() => {
+      console.log("Polling tick...");
+      callback();
+    }, interval);
+    
+    // Store the interval ID
+    intervalRef.current = newIntervalId;
+    
+    // Return a function to stop polling
+    return () => stopPolling();
+  }, [callback, defaultInterval]);
+  
+  // Function to stop the polling
+  const stopPolling = useCallback(() => {
+    console.log("Stopping polling loop");
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+  
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current !== null) {
+        window.clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+  
+  return [startPolling, stopPolling];
+}
+
 const api = axios.create({
   baseURL: '/api', //import.meta.env.VITE_API_URL, // Loaded from .env
   headers: {
@@ -275,6 +328,55 @@ export interface CreateRuleParams {
   applyToAll?: boolean;
 }
 
+// Hook for creating a rule with optional apply-to-all with real-time updates
+export function useCreateTransactionRule(options: { pollingInterval?: number } = {}) {
+  const queryClient = useQueryClient();
+  const { pollingInterval = 1000 } = options;
+  
+  // Use our generic polling hook
+  const [startPolling, stopPolling] = usePollingEffect(
+    () => queryClient.invalidateQueries({queryKey: ['transactions']}),
+    pollingInterval
+  );
+  
+  return useMutation<TransactionRule, Error, CreateRuleParams>({
+    mutationFn: async (params: CreateRuleParams) => {
+      try {
+        // First create the rule
+        const response = await api.post('/rules/', params.rule);
+        const createdRule = response.data;
+        
+        // If applyToAll is true, apply the rule to all transactions
+        // This is where the long-running operation happens
+        if (params.applyToAll && createdRule.id) {
+          // Start polling for updates at this point
+          startPolling();
+          setLongOperationInProgress(true);
+          
+          try {
+            await api.post(`/rules/${createdRule.id}/apply_to_all/`);
+          } finally {
+            stopPolling();
+            setLongOperationInProgress(false);
+          }
+        }
+        
+        return createdRule;
+      } catch (error) {
+        // Make sure we stop polling if there's an error
+        stopPolling();
+        setLongOperationInProgress(false);
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: ['rules']});
+      queryClient.invalidateQueries({queryKey: ['transactions']});
+    }
+  });
+}
+
+// Original function kept for backward compatibility
 export async function createTransactionRule(params: CreateRuleParams): Promise<TransactionRule> {
   // First create the rule
   const response = await api.post('/rules/', params.rule);
@@ -308,6 +410,77 @@ export interface RuleApplyResponse {
   updated_count: number;
 }
 
+// Hook for applying a rule to all transactions with real-time updates
+export function useApplyRuleToAll(options: { pollingInterval?: number } = {}) {
+  const queryClient = useQueryClient();
+  const { pollingInterval = 1000 } = options;
+  
+  // Use our generic polling hook
+  const [startPolling, stopPolling] = usePollingEffect(
+    () => queryClient.invalidateQueries({queryKey: ['transactions']}),
+    pollingInterval
+  );
+  
+  return useMutation<RuleApplyResponse, Error, number>({
+    mutationFn: async (ruleId: number) => {
+      try {
+        const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
+        return response.data;
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+          return error.response.data;
+        }
+        throw error;
+      }
+    },
+    onMutate: () => {
+      startPolling();
+      setLongOperationInProgress(true);
+    },
+    onSettled: () => {
+      stopPolling();
+      setLongOperationInProgress(false);
+      queryClient.invalidateQueries({queryKey: ['transactions']});
+    }
+  });
+}
+
+// Hook for applying all rules with real-time updates
+export function useApplyAllRules(options: { pollingInterval?: number } = {}) {
+  const queryClient = useQueryClient();
+  const { pollingInterval = 1000 } = options;
+  
+  // Use our generic polling hook
+  const [startPolling, stopPolling] = usePollingEffect(
+    () => queryClient.invalidateQueries({queryKey: ['transactions']}),
+    pollingInterval
+  );
+  
+  return useMutation<RuleApplyResponse, Error, void>({
+    mutationFn: async () => {
+      try {
+        const response = await api.post('/rules/apply_all_rules/');
+        return response.data;
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+          return error.response.data;
+        }
+        throw error;
+      }
+    },
+    onMutate: () => {
+      startPolling();
+      setLongOperationInProgress(true);
+    },
+    onSettled: () => {
+      stopPolling();
+      setLongOperationInProgress(false);
+      queryClient.invalidateQueries({queryKey: ['transactions']});
+    }
+  });
+}
+
+// Original functions kept for backward compatibility
 export async function applyRuleToAll(ruleId: number): Promise<RuleApplyResponse> {
   try {
     setLongOperationInProgress(true);
@@ -367,43 +540,14 @@ export interface CSVUploadOptions {
 export function useCSVUpload(options: CSVUploadOptions = {}) {
   const queryClient = useQueryClient();
   const { pollingInterval = 1000 } = options;
-  const timerRef = useRef<number | null>(null);
-
-  // Function to start the invalidation loop
-  const startInvalidationLoop = useCallback(() => {
-    console.log("Starting invalidation loop");
-    // Clear any existing timer first
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-    }
-
-    // Set up a new interval to periodically invalidate transaction queries
-    const newTimerId = window.setInterval(() => {
-      console.log("Polling for updates...");
-      queryClient.invalidateQueries({queryKey: ['transactions']});
-    }, pollingInterval);
-
-    // Store the timer ID for cleanup
-    timerRef.current = newTimerId;
-  }, [queryClient, pollingInterval]);
-
-  // Function to stop the invalidation loop
-  const stopInvalidationLoop = useCallback(() => {
-    console.log("Stopping invalidation loop");
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  // Clean up the timer when the component using this hook unmounts
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearInterval(timerRef.current);
-      }
-    };
-  }, []);
+  
+  // Use our generic polling hook to create start/stop functions
+  const [startPolling, stopPolling] = usePollingEffect(
+    // The function to call on each interval
+    () => queryClient.invalidateQueries({queryKey: ['transactions']}),
+    // The polling interval
+    pollingInterval
+  );
 
   return useMutation<UploadCSVResponse, Error, File>({
     mutationFn: async (file) => {
@@ -428,7 +572,7 @@ export function useCSVUpload(options: CSVUploadOptions = {}) {
     },
     onMutate: () => {
       // Start the interval to invalidate queries periodically
-      startInvalidationLoop();
+      startPolling();
       
       // Set the global long operation flag (still using this for backward compatibility)
       setLongOperationInProgress(true);
@@ -455,7 +599,7 @@ export function useCSVUpload(options: CSVUploadOptions = {}) {
     },
     onSettled: () => {
       // Always stop the invalidation loop and clear long operation flag when done
-      stopInvalidationLoop();
+      stopPolling();
       setLongOperationInProgress(false);
     }
   });

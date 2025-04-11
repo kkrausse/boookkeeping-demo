@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   QueryClient,
   keepPreviousData,
@@ -22,29 +23,21 @@ export interface UploadCSVResponse {
   error?: string;
 }
 
+// Basic CSV upload function - for backward compatibility
+// Note: We've moved most of this logic to the useCSVUpload hook
 export async function uploadCSV(file: File): Promise<UploadCSVResponse> {
   // Create FormData object to handle file upload
   const formData = new FormData();
   formData.append('file', file);
   
-  try {
-    setLongOperationInProgress(true);
-    // Make the POST request with form data
-    const response = await api.post('/transactions/upload/', formData, {
-      headers: {
-        // Override default Content-Type to handle multipart/form-data
-        'Content-Type': 'multipart/form-data'
-      }
-    });
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      return error.response.data;
+  // Make the POST request with form data
+  const response = await api.post('/transactions/upload/', formData, {
+    headers: {
+      // Override default Content-Type to handle multipart/form-data
+      'Content-Type': 'multipart/form-data'
     }
-    throw error;
-  } finally {
-    setLongOperationInProgress(false);
-  }
+  });
+  return response.data;
 }
 
 export async function deleteTransaction(id: number): Promise<void> {
@@ -363,19 +356,90 @@ export function useResolveTransactionFlag() {
   });
 }
 
-// Hook for CSV upload with react-query
+// Hook for CSV upload with react-query and real-time updates
 export interface CSVUploadOptions {
   onSuccess?: (data: UploadCSVResponse) => void;
   onError?: (error: Error) => void;
+  onMutate?: () => void;
+  pollingInterval?: number; // Polling interval in ms, defaults to 1000ms
 }
 
 export function useCSVUpload(options: CSVUploadOptions = {}) {
   const queryClient = useQueryClient();
-  
+  const { pollingInterval = 1000 } = options;
+  const timerRef = useRef<number | null>(null);
+
+  // Function to start the invalidation loop
+  const startInvalidationLoop = useCallback(() => {
+    console.log("Starting invalidation loop");
+    // Clear any existing timer first
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+    }
+
+    // Set up a new interval to periodically invalidate transaction queries
+    const newTimerId = window.setInterval(() => {
+      console.log("Polling for updates...");
+      queryClient.invalidateQueries({queryKey: ['transactions']});
+    }, pollingInterval);
+
+    // Store the timer ID for cleanup
+    timerRef.current = newTimerId;
+  }, [queryClient, pollingInterval]);
+
+  // Function to stop the invalidation loop
+  const stopInvalidationLoop = useCallback(() => {
+    console.log("Stopping invalidation loop");
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  // Clean up the timer when the component using this hook unmounts
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
   return useMutation<UploadCSVResponse, Error, File>({
-    mutationFn: uploadCSV,
+    mutationFn: async (file) => {
+      try {
+        // We're not using the setLongOperationInProgress flag in the uploadCSV function anymore
+        // since we're managing that directly from here
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await api.post('/transactions/upload/', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
+        return response.data;
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+          return error.response.data;
+        }
+        throw error;
+      }
+    },
+    onMutate: () => {
+      // Start the interval to invalidate queries periodically
+      startInvalidationLoop();
+      
+      // Set the global long operation flag (still using this for backward compatibility)
+      setLongOperationInProgress(true);
+      
+      // Call the onMutate callback if provided
+      if (options.onMutate) {
+        options.onMutate();
+      }
+    },
     onSuccess: (data) => {
-      // Invalidate transactions queries to update lists
+      // Final invalidation to ensure we have the latest data
       queryClient.invalidateQueries({queryKey: ['transactions']});
       
       // Call the success callback if provided
@@ -388,6 +452,11 @@ export function useCSVUpload(options: CSVUploadOptions = {}) {
       if (options.onError) {
         options.onError(error);
       }
+    },
+    onSettled: () => {
+      // Always stop the invalidation loop and clear long operation flag when done
+      stopInvalidationLoop();
+      setLongOperationInProgress(false);
     }
   });
 }

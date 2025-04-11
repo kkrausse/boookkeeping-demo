@@ -33,14 +33,20 @@ interface CsvUploadProps {
 
 function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) {
   const [uploadResult, setUploadResult] = useState<UploadCSVResponse | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   
-  // Use the refactored CSV upload hook
-  const { mutate: fileMutate } = useCSVUpload({
+  // Use the refactored CSV upload hook with polling
+  const { mutate: fileMutate, isLoading: isUploading } = useCSVUpload({
+    // We can customize the polling interval if needed (default is 1000ms)
+    pollingInterval: 1000,
+    // Called when mutation starts
+    onMutate: () => {
+      setUploadResult(null);
+      setShowResults(false);
+    },
+    // Called on successful completion
     onSuccess: (data) => {
       setUploadResult(data);
-      setIsUploading(false);
       setShowResults(true);
       
       // If we have showNotification, use it for feedback
@@ -52,9 +58,9 @@ function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) 
         }
       }
     },
+    // Called on error
     onError: (err) => {
       console.error('Upload failed:', err);
-      setIsUploading(false);
       setUploadResult({
         created: [],
         created_count: 0,
@@ -70,9 +76,6 @@ function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
-      setIsUploading(true);
-      setUploadResult(null);
-      setShowResults(false);
       fileMutate(event.target.files[0]);
     }
   };
@@ -173,7 +176,7 @@ function CsvUpload({ className, buttonOnly, showNotification }: CsvUploadProps) 
 export function TransactionsPage() {
   const queryClient = useQueryClient();
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [currentSort, setCurrentSort] = useState<TransactionSort>({ column: 'datetime', order: 'desc' });
+  const [currentSort, setCurrentSort] = useState<TransactionSort>({ column: 'created_at', order: 'asc' });
   const [filters, setFilters] = useState<FilterParams>({
     description: '',
     amountValue: '',

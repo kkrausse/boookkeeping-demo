@@ -20,6 +20,9 @@ from transactions.models import Transaction, TransactionFlag, TransactionRule
 
 class TransactionFlagTests(TestCase):
     def setUp(self):
+        # Clear existing flags to avoid uniqueness constraint errors
+        TransactionFlag.objects.all().delete()
+        
         # Create API client and factory
         self.client = APIClient()
         self.factory = APIRequestFactory()
@@ -56,46 +59,51 @@ class TransactionFlagTests(TestCase):
             flag_message='High value transaction (>$1,000)',
         )
         
-        # Create initial flags
+        # Clear any flags that might have been auto-created by signals
+        TransactionFlag.objects.all().delete()
+        
+        # Create initial flags using get_or_create to handle potential duplicates
         # 1. Parsing error flag
-        self.parse_error_flag = TransactionFlag.objects.create(
+        self.parse_error_flag, _ = TransactionFlag.objects.get_or_create(
             transaction=self.transaction1,
             flag_type='PARSE_ERROR',
             message='Test parse error',
-            is_resolvable=False
+            defaults={'is_resolvable': False}
         )
         
         # 2. Missing data flag (category)
-        self.missing_data_flag = TransactionFlag.objects.create(
+        self.missing_data_flag, _ = TransactionFlag.objects.get_or_create(
             transaction=self.transaction2,
             flag_type='MISSING_DATA',
             message='Missing category',
-            is_resolvable=True
+            defaults={'is_resolvable': True}
         )
         
         # 3. Duplicate transaction flag for t1, pointing to t2 as duplicate
-        self.duplicate_flag = TransactionFlag.objects.create(
+        self.duplicate_flag, _ = TransactionFlag.objects.get_or_create(
             transaction=self.transaction_with_duplicate,
             flag_type='DUPLICATE',
             message=f'Possible duplicate of transaction {self.duplicate_transaction.id}',
-            duplicates_transaction=self.duplicate_transaction,
-            is_resolvable=True
+            defaults={
+                'duplicates_transaction': self.duplicate_transaction,
+                'is_resolvable': True
+            }
         )
         
         # 4. High amount rule flag (automatically created by the rule)
-        self.rule_flag = TransactionFlag.objects.create(
+        self.rule_flag, _ = TransactionFlag.objects.get_or_create(
             transaction=self.transaction2,
             flag_type='RULE_MATCH',
             message='High value transaction (>$1,000)',
-            is_resolvable=True
+            defaults={'is_resolvable': True}
         )
         
         # 5. Custom user-entered flag
-        self.custom_flag = TransactionFlag.objects.create(
+        self.custom_flag, _ = TransactionFlag.objects.get_or_create(
             transaction=self.transaction1,
             flag_type='CUSTOM',
             message='User added flag',
-            is_resolvable=True
+            defaults={'is_resolvable': True}
         )
 
     def test_put_transaction_recomputes_parsing_flags(self):
@@ -410,12 +418,14 @@ class TransactionFlagTests(TestCase):
         
         # Manually create the duplicate flag since our test environment doesn't run signals
         # This would normally be handled by the backend
-        TransactionFlag.objects.create(
+        TransactionFlag.objects.get_or_create(
             transaction=self.transaction1,
             flag_type='DUPLICATE',
             message=f'Possible duplicate of transaction {self.duplicate_transaction.id}',
-            duplicates_transaction=self.duplicate_transaction,
-            is_resolvable=True
+            defaults={
+                'duplicates_transaction': self.duplicate_transaction,
+                'is_resolvable': True
+            }
         )
         
         # The transaction1 should now have a duplicate flag pointing to duplicate_transaction

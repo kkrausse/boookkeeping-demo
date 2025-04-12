@@ -14,7 +14,7 @@ import time
 import functools
 from .models import Transaction, TransactionFlag, TransactionRule
 from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
-from .utils import create_transaction_with_flags, update_transaction_with_flags, timer, apply_transaction_rules
+from .utils import create_transaction_with_flags, update_transaction_with_flags, timer, apply_transaction_rules, apply_transaction_rule
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -311,41 +311,35 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
     @api_timer
     @action(detail=False, methods=['post'])
     def apply_all_rules(self, request):
-        """Apply all rules to all existing transactions."""
+        """Apply all rules to all existing transactions using optimized batch processing."""
+        from .utils import apply_transaction_rules
 
-        # Get all transactions
-        transactions = Transaction.objects.all()
-        total_count = transactions.count()
-        
-        # Count of transactions updated
-        updated_count = 0
         start_time = time.time()
         
-        # Process each transaction
-        for i, transaction in enumerate(transactions):
-            # Create a data dict from the transaction
-            data = {
-                'description': transaction.description,
-                'category': transaction.category,
-                'amount': transaction.amount,
-                'datetime': transaction.datetime
-            }
-            
-            # Apply all rules and update the transaction
-            updated_tx, _ = update_transaction_with_flags(transaction, data)
-            updated_count += 1
-            
-            # Log progress for large batches
-            if i > 0 and i % 100 == 0:
-                elapsed = time.time() - start_time
-                rate = i / elapsed if elapsed > 0 else 0
-                remaining = (total_count - i) / rate if rate > 0 else 'unknown'
-                logger.info(f"Applied all rules to {i}/{total_count} transactions ({rate:.1f} tx/sec, ~{remaining:.1f}s remaining)")
+        # Get total count for progress tracking
+        total_count = Transaction.objects.count()
         
-        total_time = time.time() - start_time
-        logger.info(f"All rules applied to all transactions: {updated_count} updated in {total_time:.3f}s")
-        
-        return Response({
-            'updated_count': updated_count,
-            'time_taken': f"{total_time:.3f}s"
-        })
+        # Apply all rules to all transactions
+        try:
+            logger.info(f"Applying all rules to {total_count} transactions")
+            result = apply_transaction_rules()
+            
+            total_time = time.time() - start_time
+            
+            logger.info(
+                f"All {result['rules_applied']} rules applied to {result['processed_count']} transactions: "
+                f"{result['updated_count']} updated, {result['flag_count']} flags in {total_time:.3f}s"
+            )
+            
+            return Response({
+                'updated_count': result['updated_count'],
+                'flag_count': result['flag_count'],
+                'rules_applied': result['rules_applied'],
+                'time_taken': f"{total_time:.3f}s"
+            })
+        except Exception as e:
+            logger.error(f"Error applying rules to transactions: {str(e)}")
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

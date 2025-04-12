@@ -5,6 +5,7 @@ from django.utils import timezone
 
 import logging
 import time
+from .models import TransactionRule, Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -259,113 +260,44 @@ def get_cached_rules(max_age_seconds=60):
     
     return _rules_cache['rules']
 
-def apply_transaction_rules(transaction_data, use_cache=True):
+def apply_transaction_rules(transactions=None, use_cache=True):
     """
-    Apply transaction rules to a transaction data dictionary.
+    Apply all transaction rules to a list of transactions or queryset.
     
     Args:
-        transaction_data: Dictionary containing transaction data
-        use_cache: Whether to use the rules cache (default: True)
+        transactions: List of Transaction objects, single Transaction, QuerySet, or None (process all)
+        use_cache: Whether to use the rules cache for rules (default: True)
         
     Returns:
-        tuple: (modified transaction data, list of applied rule flags)
+        dict: Summary of applied changes (e.g., total transactions updated, flags created)
     """
-    from .models import TransactionRule
-    
-    applied_rule_flags = []
-    
-    # Get rules (either from cache or directly from the database)
+
+    # Get all rules (either from cache or directly from database)
     rules = get_cached_rules() if use_cache else list(TransactionRule.objects.all())
     
-    for rule in rules:
-        rule_matches = True
-        
-        # Skip rules with no filter condition
-        if not rule.filter_condition:
-            continue
-            
-        # Check each filter condition
-        for key, value in rule.filter_condition.items():
-            # Parse field and operator from Django-style filter key
-            parts = key.split('__')
-            field = parts[0]
-            operator = parts[1] if len(parts) > 1 else 'exact'
-            
-            # Get the field value from transaction data
-            field_value = transaction_data.get(field)
-            
-            # Skip if field isn't in transaction data
-            if field_value is None:
-                rule_matches = False
-                break
-                
-            # Convert amount to Decimal for comparison if needed
-            if field == 'amount' and isinstance(field_value, str):
-                try:
-                    field_value = Decimal(field_value)
-                except (InvalidOperation, ValueError):
-                    rule_matches = False
-                    break
-            
-            # Apply appropriate comparison operator
-            if operator == 'icontains':
-                # Case-insensitive contains
-                if not (isinstance(field_value, str) and 
-                       isinstance(value, str) and 
-                       value.lower() in field_value.lower()):
-                    rule_matches = False
-                    break
-            elif operator == 'contains':
-                # Case-sensitive contains
-                if not (isinstance(field_value, str) and 
-                       isinstance(value, str) and 
-                       value in field_value):
-                    rule_matches = False
-                    break
-            elif operator == 'gt':
-                # Greater than
-                if not (field_value > value):
-                    rule_matches = False
-                    break
-            elif operator == 'lt':
-                # Less than
-                if not (field_value < value):
-                    rule_matches = False
-                    break
-            elif operator == 'gte':
-                # Greater than or equal
-                if not (field_value >= value):
-                    rule_matches = False
-                    break
-            elif operator == 'lte':
-                # Less than or equal
-                if not (field_value <= value):
-                    rule_matches = False
-                    break
-            elif operator == 'exact' or operator == '':
-                # Exact match
-                if not (field_value == value):
-                    rule_matches = False
-                    break
-            else:
-                # Unsupported operator
-                rule_matches = False
-                break
-        
-        # Apply rule actions if all conditions match
-        if rule_matches:
-            # Apply category if rule has one and transaction doesn't already have a category
-            if rule.category and not transaction_data.get('category'):
-                transaction_data['category'] = rule.category
-                
-            # Add flag for rule match
-            if rule.flag_message:
-                applied_rule_flags.append({
-                    'flag_type': 'RULE_MATCH',
-                    'message': rule.flag_message
-                })
+    # Setup a container for tracking overall changes
+    total_result = {
+        'updated_count': 0,
+        'flag_count': 0,
+        'processed_count': 0,
+        'rules_applied': len(rules)
+    }
     
-    return transaction_data, applied_rule_flags
+    # Check if we have any rules to apply
+    if not rules:
+        return total_result
+    
+    # Process each rule
+    for rule in rules:
+        # Apply the rule to all transactions
+        rule_result = apply_transaction_rule(rule=rule, transactions=transactions)
+        
+        # Accumulate results
+        total_result['updated_count'] += rule_result['updated_count']
+        total_result['flag_count'] += rule_result['flag_count']
+        total_result['processed_count'] = rule_result['processed_count']  # Will be the same for all rules
+    
+    return total_result
 
 def determine_flag_resolvability(flag_data):
     """
@@ -402,6 +334,7 @@ def create_transaction_flags(transaction, flags):
         list: The flags that were created
     """
     from .models import TransactionFlag
+    from django.db.utils import IntegrityError
     
     created_flags = []
     
@@ -412,17 +345,26 @@ def create_transaction_flags(transaction, flags):
             
         # Determine if the flag is resolvable based on its type
         is_resolvable = determine_flag_resolvability(flag_data)
-            
-        TransactionFlag.objects.create(
-            transaction=transaction,
-            flag_type=flag_data['flag_type'],
-            message=flag_data['message'],
-            is_resolvable=is_resolvable
-        )
         
-        # Mark this flag as created
-        flag_data['created'] = True
-        created_flags.append(flag_data)
+        try:
+            # Use get_or_create to avoid duplicates
+            flag, created = TransactionFlag.objects.get_or_create(
+                transaction=transaction,
+                flag_type=flag_data['flag_type'],
+                message=flag_data['message'],
+                defaults={'is_resolvable': is_resolvable}
+            )
+            
+            # Only add to created_flags if it was actually created
+            if created:
+                # Mark this flag as created
+                flag_data['created'] = True
+                created_flags.append(flag_data)
+                
+        except IntegrityError:
+            # Skip if there's a unique constraint violation
+            logger.warning(f"Skipping duplicate flag: {flag_data['flag_type']} - {flag_data['message']}")
+            continue
     
     return created_flags
 
@@ -477,6 +419,7 @@ def process_custom_flag(custom_flag, transaction, all_flags):
         None, modifies all_flags in place
     """
     from .models import TransactionFlag
+    from django.db.utils import IntegrityError
     
     if not custom_flag:
         return
@@ -496,28 +439,37 @@ def process_custom_flag(custom_flag, transaction, all_flags):
     is_resolvable = custom_flag.get('is_resolvable', True)
     
     if message:  # Only create if there's a message
-        TransactionFlag.objects.create(
-            transaction=transaction,
-            flag_type=flag_type,
-            message=message,
-            is_resolvable=is_resolvable
-        )
-        
-        # Add to our list of flags to return
-        all_flags.append({
-            'flag_type': flag_type,
-            'message': message,
-            'is_resolvable': is_resolvable,
-            'created': True
-        })
+        try:
+            # Use get_or_create to handle duplicates
+            flag, created = TransactionFlag.objects.get_or_create(
+                transaction=transaction,
+                flag_type=flag_type,
+                message=message,
+                defaults={'is_resolvable': is_resolvable}
+            )
+            
+            # Only add to flags list if it was created
+            if created:
+                # Add to our list of flags to return
+                all_flags.append({
+                    'flag_type': flag_type,
+                    'message': message,
+                    'is_resolvable': is_resolvable,
+                    'created': True
+                })
+        except IntegrityError:
+            # Log but otherwise ignore duplicates
+            logger.warning(f"Skipping duplicate custom flag: {flag_type} - {message}")
+            pass
 
 # Add the new apply_transaction_rule function
-def apply_transaction_rule(rule_id, transactions=None):
+def apply_transaction_rule(rule_id=None, rule=None, transactions=None):
     """
     Apply a TransactionRule to a single transaction or a queryset of transactions.
     
     Args:
-        rule_id (int): ID of the TransactionRule to apply.
+        rule_id (int, optional): ID of the TransactionRule to apply.
+        rule (TransactionRule, optional): TransactionRule object to apply directly.
         transactions (Transaction, QuerySet, or None): Single transaction, queryset, or None (process all).
     
     Returns:
@@ -526,11 +478,16 @@ def apply_transaction_rule(rule_id, transactions=None):
     from django.core.exceptions import ValidationError
     from .models import TransactionRule, Transaction, TransactionFlag
     
-    try:
-        # Fetch the rule
-        rule = TransactionRule.objects.get(id=rule_id)
-    except TransactionRule.DoesNotExist:
-        raise ValidationError(f"TransactionRule with ID {rule_id} does not exist.")
+    # Get the rule - either from the parameter or fetch by ID
+    if rule is None and rule_id is None:
+        raise ValidationError("Either rule or rule_id must be provided")
+    
+    if rule is None:
+        try:
+            # Fetch the rule
+            rule = TransactionRule.objects.get(id=rule_id)
+        except TransactionRule.DoesNotExist:
+            raise ValidationError(f"TransactionRule with ID {rule_id} does not exist.")
 
     # Prepare the transactions queryset
     if transactions is None:
@@ -586,11 +543,40 @@ def apply_transaction_rule(rule_id, transactions=None):
     
     # Return summary of changes
     return {
-        'rule_id': rule_id,
+        'rule_id': rule.id,
         'updated_count': update_count,
         'flag_count': flag_count,
         'processed_count': filtered_queryset.count()
     }
+
+def create_clean_transactions(data_list):
+    """
+    Create transactions in bulk from a list of data dictionaries.
+    
+    Args:
+        data_list: List of dictionaries containing transaction data
+        
+    Returns:
+        list: List of created Transaction objects
+    """
+    from .models import Transaction
+    
+    created_transactions = []
+    
+    for data in data_list:
+        # Clean the data
+        cleaned_data = clean_transaction_data(data)
+        
+        # Validate that we have at least some valid data
+        if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
+            continue  # Skip invalid data
+        
+        # Create transaction
+        transaction = Transaction(**cleaned_data)
+        transaction.save()
+        created_transactions.append(transaction)
+    
+    return created_transactions
 
 def create_transaction_with_flags(data):
     """
@@ -602,30 +588,40 @@ def create_transaction_with_flags(data):
     Returns:
         tuple: (transaction object, list of flag dictionaries)
     """
-    from .models import Transaction
+    from .models import Transaction, TransactionFlag
 
     # Clean the data
     cleaned_data = clean_transaction_data(data)
-    
-    # Apply transaction rules 
-    cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
-    
-    # Generate validation flags after rule application
-    validation_flags = transaction_validation_flags(cleaned_data, data)
     
     # Validate that we have at least some valid data
     if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
         raise ValueError("Transaction must have at least a description, category, or valid amount")
     
-    # Create transaction
+    # Create transaction first (so it exists in the database)
     transaction = Transaction(**cleaned_data)
     transaction.save()
     
+    # Get validation flags from the data
+    validation_flags = transaction_validation_flags(cleaned_data, data)
+    
+    # Create validation flags first
+    create_transaction_flags(transaction, validation_flags)
+    
+    # Apply transaction rules to just this transaction
+    apply_transaction_rules(transaction)
+    
+    # Get any rule flags that were created (for returning to the caller)
+    rule_flags = []
+    for flag in transaction.flags.filter(flag_type='RULE_MATCH'):
+        rule_flags.append({
+            'flag_type': flag.flag_type,
+            'message': flag.message,
+            'is_resolvable': flag.is_resolvable,
+            'created': True
+        })
+    
     # Combine all flags
     all_flags = validation_flags + rule_flags
-    
-    # Create flags
-    create_transaction_flags(transaction, all_flags)
     
     return transaction, all_flags
 
@@ -640,19 +636,13 @@ def update_transaction_with_flags(transaction, data):
     Returns:
         tuple: (updated transaction object, list of flag dictionaries)
     """
-    from .models import TransactionFlag
+    from .models import Transaction, TransactionFlag
     
     # Merge the existing transaction data with the update
     merged_data, custom_flag = merge_transaction_update(transaction, data)
     
     # Clean the merged data
     cleaned_data = clean_transaction_data(merged_data)
-    
-    # Apply transaction rules
-    cleaned_data, rule_flags = apply_transaction_rules(cleaned_data)
-    
-    # Generate validation flags after rule application
-    validation_flags = transaction_validation_flags(cleaned_data, merged_data)
     
     # Clear existing parse error, missing data, and rule match flags
     # Keep custom flags intact
@@ -666,20 +656,36 @@ def update_transaction_with_flags(transaction, data):
     old_amount = transaction.amount
     old_category = transaction.category
     
-    # Update transaction
+    # Update transaction with the cleaned data
     for key, value in cleaned_data.items():
         setattr(transaction, key, value)
     transaction.save()
     
+    # Generate validation flags after updating the transaction
+    validation_flags = transaction_validation_flags(cleaned_data, merged_data)
+    
+    # Create validation flags first
+    create_transaction_flags(transaction, validation_flags)
+
+    # Apply transaction rules to just this transaction
+    apply_transaction_rules(transaction)
+    
+    # Get any rule flags that were created (for returning to the caller)
+    rule_flags = []
+    for flag in transaction.flags.filter(flag_type='RULE_MATCH'):
+        rule_flags.append({
+            'flag_type': flag.flag_type,
+            'message': flag.message,
+            'is_resolvable': flag.is_resolvable,
+            'created': True
+        })
+    
     # The post_save signal handler will automatically update all duplicate flags
     
-    # Combine all flags
+    # Combine all flags for return value
     all_flags = validation_flags + rule_flags
     
     # Process custom flag if provided
     process_custom_flag(custom_flag, transaction, all_flags)
-    
-    # Create flags
-    create_transaction_flags(transaction, all_flags)
     
     return transaction, all_flags

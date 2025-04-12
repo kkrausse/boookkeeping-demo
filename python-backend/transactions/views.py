@@ -367,14 +367,16 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
 
         try:
             start_time = time.time()
-            result, filtered_queryset = apply_transaction_rule(rule.id)
+            result, transaction_ids = apply_transaction_rule(rule.id)
             total_time = time.time() - start_time
 
-            print('update txns', filtered_queryset)
+            # Get the filtered transactions once to avoid multiple database queries
+            filtered_transactions = Transaction.objects.filter(id__in=transaction_ids)
+            
             # Add time taken to the result
             result['time_taken'] = f"{total_time:.3f}s"
-            clear_transaction_flags_bulk(filtered_queryset, ['PARSE_ERROR', 'MISSING_DATA'], only_unresolved=True)
-            create_validation_flags_bulk(filtered_queryset)
+            clear_transaction_flags_bulk(filtered_transactions, ['PARSE_ERROR', 'MISSING_DATA'], only_unresolved=True)
+            create_validation_flags_bulk(filtered_transactions)
             
             logger.info(f"Rule {rule.id} applied to all transactions: {result['updated_count']} updated in {total_time:.3f}s")
             return Response(result)

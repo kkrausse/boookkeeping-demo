@@ -887,22 +887,30 @@ def apply_transaction_rule(rule_id=None, rule=None, transactions=None):
     update_count = 0
     flag_count = 0
     
+    # Get all transaction IDs first that match the rule's filter condition
+    all_transaction_ids = list(filtered_queryset.values_list('id', flat=True))
+    tids = all_transaction_ids.copy()  # Track all transactions that match the rule's conditions
+    
     # Process in batches for better performance
     batch_size = 1000
-    tids = []
-    for i in range(0, filtered_queryset.count(), batch_size):
-        batch = filtered_queryset[i:i+batch_size]
+    total_transactions = len(all_transaction_ids)
+    
+    for i in range(0, total_transactions, batch_size):
+        # Get the batch of IDs for this iteration
+        batch_ids = all_transaction_ids[i:i+batch_size]
+        
+        # Fetch the batch of transactions
+        batch = Transaction.objects.filter(id__in=batch_ids)
         
         # Process rule actions
         for transaction in batch:
             modified = False
 
-            tids.append(transaction.id)
-            # Apply category if rule has one and transaction doesn't
-            if rule.category and not transaction.category:
+            # Apply category if rule has one and transaction has empty/null category
+            if rule.category and (not transaction.category or transaction.category.strip() == ''):
                 transaction.category = rule.category
                 modified = True
-            
+
             # Save if modified
             if modified:
                 transaction.save()
@@ -927,7 +935,7 @@ def apply_transaction_rule(rule_id=None, rule=None, transactions=None):
         'updated_count': update_count,
         'flag_count': flag_count,
         'processed_count': filtered_queryset.count(),
-    }, Transaction.objects.filter(id__in=tids)
+    }, tids
 
 def create_clean_transactions(data_list):
     """

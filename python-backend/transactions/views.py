@@ -75,6 +75,45 @@ class TransactionViewSet(viewsets.ModelViewSet):
     ordering_fields = ['description', 'category', 'amount', 'datetime', 'created_at', 'updated_at', 'flag_count']
     ordering = ['-created_at']  # Default ordering
     
+    def list(self, request, *args, **kwargs):
+        """Override list to add flag counts by type for the entire collection"""
+        # Get the filtered queryset
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Get total flag counts by type from the database
+        from django.db.models import Count
+        from .models import TransactionFlag
+        
+        # Create a query to get flags for all transactions in the queryset
+        transaction_ids = queryset.values_list('id', flat=True)
+        
+        # Get counts by flag_type for all flags of transactions in the filtered queryset
+        flag_counts = TransactionFlag.objects.filter(
+            transaction_id__in=transaction_ids,
+            is_resolved=False
+        ).values('flag_type').annotate(
+            count=Count('id')
+        ).order_by()
+        
+        # Convert to dictionary
+        flag_counts_dict = {item['flag_type']: item['count'] for item in flag_counts}
+        flag_counts_dict['total'] = sum(flag_counts_dict.values())
+        
+        # Continue with standard list logic
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            # Add flag counts to the paginated response
+            response.data['flag_counts'] = flag_counts_dict
+            return response
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'results': serializer.data,
+            'flag_counts': flag_counts_dict
+        })
+    
     def get_queryset(self):
         """
         Override get_queryset to add annotation for flag_count to enable sorting by flag count

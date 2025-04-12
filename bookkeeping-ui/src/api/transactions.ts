@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   QueryClient,
   keepPreviousData,
@@ -369,37 +369,20 @@ export function useCreateTransactionRule(options: { pollingInterval?: number } =
   
   return useMutation<TransactionRule, Error, CreateRuleParams>({
     mutationFn: async (params: CreateRuleParams) => {
-      try {
-        // First create the rule
-        const response = await api.post('/rules/', params.rule);
-        const createdRule = response.data;
-        
-        // If applyToAll is true, apply the rule to all transactions
-        // This is where the long-running operation happens
-        if (params.applyToAll && createdRule.id) {
-          // Start polling for updates at this point
-          startPolling();
-          setLongOperationInProgress(true);
-          
-          try {
-            await api.post(`/rules/${createdRule.id}/apply_to_all/`);
-          } finally {
-            stopPolling();
-            setLongOperationInProgress(false);
-          }
-        }
-        
-        return createdRule;
-      } catch (error) {
-        // Make sure we stop polling if there's an error
-        stopPolling();
-        setLongOperationInProgress(false);
-        throw error;
-      }
+      // First create the rule
+      const response = await api.post('/rules/', params.rule);
+      const createdRule = response.data;
+      // just always apply to all
+      await api.post(`/rules/${createdRule.id}/apply_to_all/`);
+
+      return createdRule;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ['rules']});
       queryClient.invalidateQueries({queryKey: ['transactions']});
+    },
+    onSettled: () => {
+      stopPolling();
     }
   });
 }
@@ -557,6 +540,20 @@ export function useResolveTransactionFlag() {
   });
 }
 
+
+function fetchTransaction({ id }: Partial<Transaction> & { id: any }) {
+  return api.get(`/transactions/${id}/`)
+}
+
+const updatePageTransactions = async (data: PaginatedResponse<Transaction>) => {
+  const transactions: Transaction[] | undefined = data?.results;
+  const updatedTransactions = await Promise.all(transactions.map(txn => fetchTransaction(txn).then(r => r.data)));
+  return {
+    ...data,
+    results: updatedTransactions,
+  }
+}
+
 // Hook for using React Query to update a transaction with optimistic updates
 export function useTransactionUpdateMutation({ fetchParams }: {fetchParams: FetchTransactionsParams}) {
   const queryClient = useQueryClient();
@@ -577,7 +574,7 @@ export function useTransactionUpdateMutation({ fetchParams }: {fetchParams: Fetc
       );
 
       // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated({}) });
+      await queryClient.cancelQueries({ queryKey: currentKey });
       
       // Optimistically update the cache
       if (previousData) {
@@ -593,24 +590,20 @@ export function useTransactionUpdateMutation({ fetchParams }: {fetchParams: Fetc
             };
           }
         );
-        
-        // Also update any paginated queries
-        const paginatedQueries = queryClient.getQueriesData<PaginatedResponse<Transaction>>({
-          queryKey: ['transactions', 'paginated']
-        });
-        
-        queryClient.setQueryData(currentKey, data => ({
-          ...data,
-          results: data.results.map(tx =>
-            tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
-                                   )
-        }));
       }
       
       return { previousData };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    onSuccess: async (_, _2, context) => {
+      // NOTE don't invalidate queries, keep current page of transactions by refreshing individual transactions
+      // queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      if (context?.previousData) {
+        console.log('setting new data?')
+        queryClient.setQueryData(
+          currentKey,
+          await updatePageTransactions(context.previousData)
+        );
+      }
     },
     onError: (error, _, context) => {
       // Roll back to the previous value if there was an error
@@ -727,5 +720,5 @@ export function useTransactions(params: FetchTransactionsParams = {}) {
     queryKey: TRANSACTION_KEYS.paginated(params),
     queryFn: () => fetchTransactions(params).then(r => r.data),
     placeholderData: keepPreviousData,
-  });
+  })
 }

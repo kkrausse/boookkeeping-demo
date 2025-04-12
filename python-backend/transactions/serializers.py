@@ -8,9 +8,29 @@ class TransactionFlagSerializer(serializers.ModelSerializer):
 
 class TransactionSerializer(serializers.ModelSerializer):
     flags = TransactionFlagSerializer(many=True, read_only=True)
+    flag_counts = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = Transaction
-        fields = ['id', 'description', 'category', 'amount', 'datetime', 'created_at', 'updated_at', 'flags']
+        fields = ['id', 'description', 'category', 'amount', 'datetime', 'created_at', 'updated_at', 'flags', 'flag_counts']
+    
+    def get_flag_counts(self, obj):
+        """Return counts of unresolved flags by type using database aggregation"""
+        from django.db.models import Count
+        
+        # Get counts by flag_type in a single database query using group by
+        type_counts = obj.flags.filter(is_resolved=False) \
+            .values('flag_type') \
+            .annotate(count=Count('id')) \
+            .order_by()
+        
+        # Convert to dictionary
+        counts = {item['flag_type']: item['count'] for item in type_counts}
+        
+        # Add total
+        counts['total'] = sum(counts.values())
+        
+        return counts
 
 class TransactionCSVSerializer(serializers.Serializer):
     file = serializers.FileField()

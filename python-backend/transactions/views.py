@@ -84,8 +84,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         
         queryset = Transaction.objects.all()
         
-        # Annotate with flag count for sorting by number of unresolved flags
-        # Only count flags that have not been resolved
+        # Annotate with total flag count for sorting by number of unresolved flags
         queryset = queryset.annotate(
             flag_count=models.Count('flags', filter=models.Q(flags__is_resolved=False))
         )
@@ -235,10 +234,31 @@ class TransactionViewSet(viewsets.ModelViewSet):
         skipped_rows = []
         warnings = []
         
+        # Track skipped rows by comparing original and processed counts
+        original_row_count = len(rows)
+        
         try:
             # Use bulk creation mode
             transactions, flags_map = create_transactions_with_flags_bulk(rows)
             created_transactions = transactions
+            
+            # Collect skipped row information by checking which rows are missing
+            # Skipped rows would have amount=None, description='' and category=''
+            for row_idx, row in enumerate(rows):
+                # Use the original row number from our mapping
+                original_row_num = row_nums.get(row_idx, row_idx+1)
+                
+                # Check if this row meets our skip criteria (missing all required fields)
+                amount = row.get('amount', '').strip() if isinstance(row.get('amount', ''), str) else row.get('amount', '')
+                description = row.get('description', '').strip()
+                category = row.get('category', '').strip()
+                
+                if (not amount and not description and not category):
+                    skipped_rows.append({
+                        "row": original_row_num,
+                        "data": row,
+                        "reason": "Missing all required fields: amount, description, and category"
+                    })
             
             # Process warnings for each transaction
             for i, transaction in enumerate(transactions):
@@ -262,17 +282,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
         processing_time = time.time() - processing_start
         logger.info(f"CSV processing complete: {len(rows)} rows in {processing_time:.3f}s ({len(rows)/processing_time:.1f} rows/sec)")
         
-        serialization_start = time.time()
-        # Serialize the created transactions
-        transaction_serializer = TransactionSerializer(created_transactions, many=True)
-        logger.info(f"Serialization took {time.time() - serialization_start:.3f}s")
+        # Skip serialization of all transactions for better performance
+        logger.info("Skipping full transaction serialization, returning only counts and skipped rows")
 
-        # Prepare response
+        # Prepare response with just counts and skipped rows
         response_data = {
-            "created": transaction_serializer.data,
             "created_count": len(created_transactions),
-            "warnings": warnings if warnings else None,
-            "errors": skipped_rows if skipped_rows else None
+            "skipped_count": len(skipped_rows),
+            "skipped_rows": skipped_rows[:100] if skipped_rows else None  # Limit to first 100 skipped rows
         }
 
         if created_transactions:

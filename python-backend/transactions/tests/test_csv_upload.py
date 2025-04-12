@@ -137,3 +137,111 @@ class CSVUploadTests(TestCase):
         
         # Verify error response
         self.assertEqual(response.status_code, 400, "Should return 400 for invalid CSV")
+    
+    def test_bulk_operations_with_duplicates(self):
+        """Test bulk operations with focus on duplicate detection performance."""
+        # Create a large batch of transactions with some duplicates
+        import time
+        from transactions.utils import create_transactions_with_flags_bulk
+        
+        # Create test data - 100 transactions with some duplicates
+        # This is a smaller number for test speed, but demonstrates the concept
+        base_data = []
+        
+        # Add 80 unique transactions
+        for i in range(80):
+            base_data.append({
+                "description": f"Unique Transaction {i}",
+                "amount": f"{i + 10}.99", 
+                "category": "Test",
+                "datetime": "2023-01-01"
+            })
+        
+        # Add 10 pairs of duplicates (20 transactions)
+        for i in range(10):
+            duplicate = {
+                "description": f"Duplicate Set {i}",
+                "amount": "100.00",
+                "category": "Test", 
+                "datetime": "2023-01-01"
+            }
+            base_data.append(duplicate)
+            base_data.append(duplicate.copy())  # Add duplicate
+        
+        # Measure performance
+        start_time = time.time()
+        transactions, flags_map = create_transactions_with_flags_bulk(base_data)
+        end_time = time.time()
+        
+        # Verify correct number of transactions created
+        self.assertEqual(len(transactions), 100, "Should have created 100 transactions")
+        
+        # Count duplicate flags
+        duplicate_flags = 0
+        for txn_id, flags in flags_map.items():
+            for flag in flags:
+                if flag['flag_type'] == 'DUPLICATE':
+                    duplicate_flags += 1
+        
+        # Verify 20 duplicate flags created (each duplicate in a pair points to the other)
+        self.assertEqual(duplicate_flags, 20, "Should have created 20 duplicate flags")
+        
+        # Verify database has the correct duplicate flags
+        from transactions.models import TransactionFlag
+        db_duplicate_flags = TransactionFlag.objects.filter(flag_type='DUPLICATE').count()
+        self.assertEqual(db_duplicate_flags, 20, "Database should have 20 duplicate flags")
+        
+        # Log performance (doesn't affect test result but useful for debugging)
+        print(f"Processed 100 transactions with duplicate detection in {end_time - start_time:.3f} seconds")
+    
+    def test_large_csv_upload_simulation(self):
+        """Simulate a large CSV upload to test bulk processing performance."""
+        from transactions.utils import create_transactions_with_flags_bulk
+        import time
+        
+        # Create a moderate-sized dataset with 200 transactions
+        # This is smaller than real-world scenarios but suitable for unit testing
+        data = []
+        
+        # Add 160 unique transactions
+        for i in range(160):
+            data.append({
+                "description": f"Item {i}",
+                "amount": f"{(i % 100) + 10.99}", 
+                "category": f"Category {i % 10}",
+                "datetime": "2023-01-01"
+            })
+        
+        # Add 20 pairs of duplicates (40 transactions)
+        for i in range(20):
+            dupe = {
+                "description": f"Duplicate Item {i}",
+                "amount": f"{50.00}", 
+                "category": "Duplicates",
+                "datetime": "2023-01-02"
+            }
+            data.append(dupe)
+            data.append(dupe.copy())
+        
+        # Measure time to process the data in bulk
+        start_time = time.time()
+        transactions, _ = create_transactions_with_flags_bulk(data)
+        end_time = time.time()
+        
+        # Verify the expected number of transactions
+        self.assertEqual(len(transactions), 200, "Should have created 200 transactions")
+        
+        # Verify duplicate flags were created
+        duplicate_flags = TransactionFlag.objects.filter(flag_type='DUPLICATE').count()
+        self.assertEqual(duplicate_flags, 40, "Should have created 40 duplicate flags")
+        
+        # Verify transactions all have timestamps
+        for txn in transactions:
+            self.assertIsNotNone(txn.datetime, "All transactions should have timestamps")
+            
+        # Verify transactions have amounts
+        amount_count = Transaction.objects.filter(amount__isnull=False).count()
+        self.assertEqual(amount_count, 200, "All transactions should have amounts")
+        
+        # Log performance metrics (doesn't affect test result)
+        print(f"Bulk processed 200 transactions in {end_time - start_time:.3f} seconds")

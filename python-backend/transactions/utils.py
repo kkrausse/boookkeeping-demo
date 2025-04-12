@@ -324,6 +324,270 @@ def determine_flag_resolvability(flag_data):
     # PARSE_ERROR flags are not resolvable
     return False
 
+def check_duplicates_bulk(transactions, preserve_resolution=True):
+    """
+    Check for duplicates in bulk for a list or queryset of transactions.
+    This efficiently finds and flags potential duplicates using Django ORM.
+    
+    Args:
+        transactions: List or QuerySet of Transaction objects
+        preserve_resolution: Whether to preserve resolution status of existing duplicate flags
+        
+    Returns:
+        dict: Mapping of transaction IDs to their duplicate flags
+    """
+    from .models import Transaction, TransactionFlag
+    from django.db import transaction as db_transaction
+    from django.db.models import Count
+    import time
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # For performance debugging
+    def log_timing(step_name, start_time):
+        duration = time.time() - start_time
+        logger.info(f"TIMING: Duplicate detection - {step_name} took {duration:.3f}s")
+        return time.time()
+    
+    # Record initial start time
+    total_start = time.time()
+    
+    # Step 1: Prepare transactions queryset
+    step1_start = time.time()
+    # Convert list to queryset if needed
+    if not hasattr(transactions, 'filter'):
+        if not transactions:
+            return {}
+        transaction_ids = [t.id for t in transactions]
+        transaction_queryset = Transaction.objects.filter(id__in=transaction_ids)
+    else:
+        transaction_queryset = transactions
+    
+    # Get all transaction IDs that we're checking
+    checking_ids = set(transaction_queryset.values_list('id', flat=True))
+    
+    # Short-circuit if no transactions
+    if not checking_ids:
+        return {}
+    step1_end = log_timing("Step 1: Prepare transactions", step1_start)
+    
+    # Create a mapping to track duplicate flags by transaction
+    duplicate_flags_map = {}
+    
+    # Step 2: Find duplicate groups, but ONLY for transactions in our checking set
+    step2_start = time.time()
+    # More targeted approach: find duplicates only among the transactions we're checking
+    # and any existing transactions they might duplicate
+    
+    # Get a list of all descriptions and amounts from our checking set
+    checking_data = transaction_queryset.filter(amount__isnull=False).values('description', 'amount')
+    
+    # If there are no valid transactions to check, return early
+    if not checking_data:
+        logger.info("No valid transactions to check, returning early")
+        return duplicate_flags_map
+    
+    # Get unique descriptions and amounts from our checking set
+    checking_descriptions = set(item['description'] for item in checking_data)
+    checking_amounts = set(item['amount'] for item in checking_data)
+    
+    logger.info(f"Checking {len(checking_descriptions)} descriptions and {len(checking_amounts)} amounts for duplicates")
+    
+    # Find duplicate groups only for descriptions and amounts in our checking set
+    duplicates = (
+        Transaction.objects.filter(
+            amount__in=checking_amounts,
+            description__in=checking_descriptions,
+            amount__isnull=False
+        )
+        .values('amount', 'description')
+        .annotate(count=Count('id'))
+        .filter(count__gt=1)
+    )
+    
+    # Log duplicate groups count
+    duplicate_count = len(duplicates)
+    logger.info(f"Found {duplicate_count} potential duplicate groups")
+    
+    # Short-circuit if no duplicates
+    if not duplicates:
+        logger.info("No duplicates found, returning early")
+        return duplicate_flags_map
+    step2_end = log_timing("Step 2: Find duplicate groups", step2_start)
+    
+    # Step 3: Fetch matching transactions more efficiently
+    step3_start = time.time()
+    
+    # Prepare a list of (amount, description) tuples for more targeted filtering
+    duplicate_criteria = [(item['amount'], item['description']) for item in duplicates]
+    
+    # If too many criteria, chunking the query might be necessary
+    if len(duplicate_criteria) > 500:  # Arbitrary threshold for query size
+        logger.info(f"Large number of duplicate criteria ({len(duplicate_criteria)}), consider chunking")
+    
+    # Build a more targeted query using Q objects
+    from django.db.models import Q
+    query = Q()
+    for amount, description in duplicate_criteria:
+        query |= Q(amount=amount, description=description)
+    
+    # Execute the query with the optimized filter
+    duplicate_transactions = Transaction.objects.filter(query)
+    
+    # Count resulting transactions
+    duplicate_txn_count = duplicate_transactions.count()
+    logger.info(f"Found {duplicate_txn_count} transactions matching duplicate criteria")
+    step3_end = log_timing("Step 3: Fetch matching transactions", step3_start)
+    
+    # Step 4: Group transactions with optimization
+    step4_start = time.time()
+    
+    # Optimize by using a more efficient query to prefetch all data
+    duplicate_transactions = list(duplicate_transactions.only('id', 'amount', 'description'))
+    
+    # Group transactions by amount and description
+    transaction_groups = {}
+    for txn in duplicate_transactions:
+        key = (txn.amount, txn.description)
+        if key not in transaction_groups:
+            transaction_groups[key] = []
+        transaction_groups[key].append(txn)
+    
+    # Pre-filter groups with only one transaction (can't be duplicates)
+    transaction_groups = {k: v for k, v in transaction_groups.items() if len(v) > 1}
+    
+    # Count group sizes
+    group_stats = {}
+    total_transactions = 0
+    for key, group in transaction_groups.items():
+        size = len(group)
+        total_transactions += size
+        if size not in group_stats:
+            group_stats[size] = 0
+        group_stats[size] += 1
+    
+    logger.info(f"Transaction group sizes: {group_stats} (total: {total_transactions} transactions in {len(transaction_groups)} groups)")
+    step4_end = log_timing("Step 4: Group transactions", step4_start)
+    
+    # Step 5: Generate duplicate pairs more efficiently
+    step5_start = time.time()
+    duplicate_pairs = []
+    checked_pairs = set()  # To avoid duplicate work
+    
+    # Convert checking_ids to a set for faster lookups if it isn't already
+    if not isinstance(checking_ids, set):
+        checking_ids = set(checking_ids)
+    
+    # Process each group and generate pairs
+    for group in transaction_groups.values():
+        # Create pairs with at least one transaction in our checking set
+        checking_in_group = [txn for txn in group if txn.id in checking_ids]
+        other_in_group = [txn for txn in group if txn.id not in checking_ids]
+        
+        # Generate pairs where at least one transaction is in our checking set
+        for txn1 in checking_in_group:
+            # Pairs between checking transactions
+            for txn2 in checking_in_group:
+                if txn1.id != txn2.id and (txn1.id, txn2.id) not in checked_pairs:
+                    duplicate_pairs.append((txn1.id, txn2.id))
+                    checked_pairs.add((txn1.id, txn2.id))
+            
+            # Pairs between checking and other transactions
+            for txn2 in other_in_group:
+                if (txn1.id, txn2.id) not in checked_pairs:
+                    duplicate_pairs.append((txn1.id, txn2.id))
+                    checked_pairs.add((txn1.id, txn2.id))
+    
+    # Short-circuit if no duplicate pairs
+    if not duplicate_pairs:
+        logger.info("No duplicate pairs found, returning early")
+        return duplicate_flags_map
+    
+    logger.info(f"Generated {len(duplicate_pairs)} duplicate pairs")
+    step5_end = log_timing("Step 5: Generate duplicate pairs", step5_start)
+    
+    # Step 6: Get existing flags
+    step6_start = time.time()
+    # Get existing duplicate flags if preserving resolution
+    existing_flags = {}
+    if preserve_resolution:
+        existing_duplicate_flags = TransactionFlag.objects.filter(
+            transaction_id__in=checking_ids,
+            flag_type='DUPLICATE'
+        )
+        
+        for flag in existing_duplicate_flags:
+            existing_flags[(flag.transaction_id, flag.duplicates_transaction_id)] = flag
+        
+        logger.info(f"Found {len(existing_flags)} existing duplicate flags")
+    step6_end = log_timing("Step 6: Get existing flags", step6_start)
+    
+    # Step 7: Create flags
+    step7_start = time.time()
+    # Create flags for each duplicate pair
+    flags_to_create = []
+    for txn_id, duplicate_id in duplicate_pairs:
+        # Get resolution status from existing flag if applicable
+        is_resolved = False
+        if preserve_resolution:
+            flag = existing_flags.get((txn_id, duplicate_id))
+            if flag:
+                is_resolved = flag.is_resolved
+        
+        # Create flag object
+        flag_obj = TransactionFlag(
+            transaction_id=txn_id,
+            duplicates_transaction_id=duplicate_id,
+            flag_type='DUPLICATE',
+            message=f'Possible duplicate of transaction {duplicate_id}',
+            is_resolvable=True,
+            is_resolved=is_resolved
+        )
+        flags_to_create.append(flag_obj)
+        
+        # Add to flags map
+        if txn_id not in duplicate_flags_map:
+            duplicate_flags_map[txn_id] = []
+            
+        duplicate_flags_map[txn_id].append({
+            'flag_type': 'DUPLICATE',
+            'message': f'Possible duplicate of transaction {duplicate_id}',
+            'is_resolvable': True,
+            'is_resolved': is_resolved,
+            'duplicates_transaction': duplicate_id,
+            'created': True
+        })
+    step7_end = log_timing("Step 7: Create flag objects", step7_start)
+    
+    # Step 8: Database operations
+    step8_start = time.time()
+    # Bulk create flags in atomic transaction
+    with db_transaction.atomic():
+        # Delete existing flags if not preserving resolution
+        if not preserve_resolution:
+            deleted_count = TransactionFlag.objects.filter(
+                transaction_id__in=checking_ids,
+                flag_type='DUPLICATE'
+            ).delete()[0]
+            logger.info(f"Deleted {deleted_count} existing duplicate flags")
+        
+        # Create new flags
+        if flags_to_create:
+            created_flags = TransactionFlag.objects.bulk_create(
+                flags_to_create,
+                ignore_conflicts=True
+            )
+            logger.info(f"Created {len(created_flags)} new duplicate flags")
+    step8_end = log_timing("Step 8: Database operations", step8_start)
+    
+    # Log total time
+    total_time = time.time() - total_start
+    logger.info(f"TIMING: Total duplicate detection took {total_time:.3f}s")
+    
+    return duplicate_flags_map
+
+
 def clear_transaction_flags_bulk(transactions, flag_types=None, only_unresolved=True):
     """
     Clear flags for multiple transactions in bulk.
@@ -709,18 +973,38 @@ def create_transactions_with_flags_bulk(data_list):
     """
     from .models import Transaction, TransactionFlag
     from django.db import transaction as db_transaction
+    import time
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # For performance debugging
+    def log_timing(step_name, start_time):
+        duration = time.time() - start_time
+        logger.info(f"TIMING: {step_name} took {duration:.3f}s")
+        return time.time()
+    
+    # Record initial start time
+    total_start = time.time()
     
     # Handle empty list case
     if not data_list:
         return [], {}
     
+    logger.info(f"Starting bulk create for {len(data_list)} transactions")
+    
     # Step 1: Bulk create transactions with cleaned data
+    step1_start = time.time()
     created_transactions, cleaned_data_list, original_data_list = create_clean_transactions(data_list)
+    step1_end = log_timing("Step 1: Bulk create transactions", step1_start)
     
     if not created_transactions:
         return [], {}
     
+    logger.info(f"Created {len(created_transactions)} transactions")
+    
     # Step 2: Apply transaction rules to all new transactions
+    step2_start = time.time()
     from django.db.models import QuerySet
     
     # If it's a list, convert it to a queryset for compatibility with apply_transaction_rules
@@ -729,35 +1013,80 @@ def create_transactions_with_flags_bulk(data_list):
         # Create a queryset from the transaction IDs
         transaction_queryset = Transaction.objects.filter(id__in=transaction_ids)
         apply_transaction_rules(transaction_queryset)
+    step2_end = log_timing("Step 2: Apply transaction rules", step2_start)
     
     # Need to refresh transactions from the database to get their updated values and IDs
+    step3_start = time.time()
     transaction_ids = [t.id for t in created_transactions]
     refreshed_transactions = list(Transaction.objects.filter(id__in=transaction_ids))
+    step3_end = log_timing("Step 3: Refresh transactions", step3_start)
     
-    # Step 3: Create a mapping of transaction ID to original data
+    # Step 4: Create a mapping of transaction ID to original data
+    step4_start = time.time()
     original_data_map = {}
     for i, transaction in enumerate(refreshed_transactions):
         if i < len(original_data_list):
             original_data_map[transaction.id] = original_data_list[i]
+    step4_end = log_timing("Step 4: Create original data map", step4_start)
     
-    # Step 4: Use the bulk validation flag function to create validation flags
+    # Step 5: Use the bulk validation flag function to create validation flags
+    step5_start = time.time()
     # For new transactions, we don't need to clear existing flags
     validation_flags_map = create_validation_flags_bulk(refreshed_transactions, original_data_map, clear_existing_flags=False)
+    step5_end = log_timing("Step 5: Create validation flags", step5_start)
     
     # Initialize transaction_flags_map with validation flags
     transaction_flags_map = validation_flags_map
     
-    # Step 5: Get rule flags for each transaction
-    for transaction in refreshed_transactions:
-        rule_flags = []
-        for flag in transaction.flags.filter(flag_type='RULE_MATCH'):
-            rule_flags.append({
-                'flag_type': flag.flag_type,
-                'message': flag.message,
-                'is_resolvable': flag.is_resolvable,
-                'created': True
-            })
-        transaction_flags_map[transaction.id].extend(rule_flags)
+    # Step 6: Get rule flags for each transaction
+    step6_start = time.time()
+    rule_flags_by_txn = {}
+    
+    # Use a single query to get all rule flags
+    all_rule_flags = TransactionFlag.objects.filter(
+        transaction_id__in=transaction_ids,
+        flag_type='RULE_MATCH'
+    ).select_related('transaction')
+    
+    # Group flags by transaction
+    for flag in all_rule_flags:
+        txn_id = flag.transaction_id
+        if txn_id not in rule_flags_by_txn:
+            rule_flags_by_txn[txn_id] = []
+        
+        rule_flags_by_txn[txn_id].append({
+            'flag_type': flag.flag_type,
+            'message': flag.message,
+            'is_resolvable': flag.is_resolvable,
+            'created': True
+        })
+    
+    # Add rule flags to transaction_flags_map
+    for txn_id, flags in rule_flags_by_txn.items():
+        if txn_id in transaction_flags_map:
+            transaction_flags_map[txn_id].extend(flags)
+        else:
+            transaction_flags_map[txn_id] = flags
+    
+    step6_end = log_timing("Step 6: Get rule flags", step6_start)
+    
+    # Step 7: Check for and create duplicate flags
+    step7_start = time.time()
+    duplicate_flags_map = check_duplicates_bulk(refreshed_transactions)
+    step7_end = log_timing("Step 7: Check duplicates", step7_start)
+    
+    # Step 8: Merge duplicate flags into our transaction flags map
+    step8_start = time.time()
+    for txn_id, flags in duplicate_flags_map.items():
+        if txn_id in transaction_flags_map:
+            transaction_flags_map[txn_id].extend(flags)
+        else:
+            transaction_flags_map[txn_id] = flags
+    step8_end = log_timing("Step 8: Merge duplicate flags", step8_start)
+    
+    # Log overall time
+    total_time = time.time() - total_start
+    logger.info(f"TIMING: Total bulk creation took {total_time:.3f}s")
     
     # Return transactions and their flags
     return refreshed_transactions, transaction_flags_map
@@ -806,8 +1135,14 @@ def create_transaction_with_flags(data):
             'created': True
         })
     
+    # Check for duplicates using our bulk function (for a single transaction)
+    duplicate_flags_map = check_duplicates_bulk([transaction])
+    
+    # Add duplicate flags to our flags list
+    duplicate_flags = duplicate_flags_map.get(transaction.id, [])
+    
     # Combine all flags
-    all_flags = validation_flags + rule_flags
+    all_flags = validation_flags + rule_flags + duplicate_flags
     
     return transaction, all_flags
 
@@ -830,9 +1165,17 @@ def update_transaction_with_flags(transaction, data):
     # Clean the merged data
     cleaned_data = clean_transaction_data(merged_data)
     
-    # Clear existing unresolved parse error, missing data, and rule match flags
+    # Clear existing unresolved parse error, missing data, rule match, and duplicate flags
     # Keep custom flags and resolved flags intact
-    clear_transaction_flags_bulk([transaction], ['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH'], only_unresolved=True)
+    clear_transaction_flags_bulk([transaction], ['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH', 'DUPLICATE'], only_unresolved=True)
+    
+    # Also clear duplicate flags that point to this transaction from other transactions
+    from .models import TransactionFlag
+    TransactionFlag.objects.filter(
+        duplicates_transaction=transaction,
+        flag_type='DUPLICATE',
+        is_resolved=False
+    ).delete()
     
     # Update transaction with the cleaned data
     for key, value in cleaned_data.items():
@@ -860,10 +1203,14 @@ def update_transaction_with_flags(transaction, data):
             'created': True
         })
     
-    # The post_save signal handler will automatically update all duplicate flags
+    # Check for duplicates using our bulk function (for a single transaction)
+    duplicate_flags_map = check_duplicates_bulk([transaction])
+    
+    # Add duplicate flags to our flags list
+    duplicate_flags = duplicate_flags_map.get(transaction.id, [])
     
     # Combine all flags for return value
-    all_flags = validation_flags + rule_flags
+    all_flags = validation_flags + rule_flags + duplicate_flags
     
     # Process custom flag if provided
     process_custom_flag(custom_flag, transaction, all_flags)

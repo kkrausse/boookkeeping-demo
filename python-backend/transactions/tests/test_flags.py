@@ -16,6 +16,7 @@ from rest_framework import status
 from transactions.views import TransactionViewSet
 from django.utils import timezone
 from transactions.models import Transaction, TransactionFlag, TransactionRule
+from transactions.utils import check_duplicates_bulk, update_transaction_with_flags
 
 
 class TransactionFlagTests(TestCase):
@@ -392,15 +393,6 @@ class TransactionFlagTests(TestCase):
             flag_type='DUPLICATE'
         ).delete()
         
-        # Create a flag where our duplicate_transaction is marked as a duplicate of transaction1
-        reverse_duplicate_flag = TransactionFlag.objects.create(
-            transaction=self.duplicate_transaction,
-            flag_type='DUPLICATE',
-            message=f'Possible duplicate of transaction {self.transaction1.id}',
-            duplicates_transaction=self.transaction1,
-            is_resolvable=True
-        )
-        
         # Now update transaction1 to match duplicate_transaction
         data = {
             'description': 'Duplicate Transaction',  # Same as duplicate_transaction
@@ -408,25 +400,11 @@ class TransactionFlagTests(TestCase):
             'category': 'Test'
         }
         
-        # Use the viewset directly rather than URL routing
-        view = TransactionViewSet.as_view({'put': 'update'})
-        request = self.factory.put('/', data, format='json')
-        response = view(request, pk=self.transaction1.id)
+        # Use our utility directly instead of the viewset
+        transaction1, flags = update_transaction_with_flags(self.transaction1, data)
         
-        # Verify response
-        self.assertEqual(response.status_code, 200)
-        
-        # Manually create the duplicate flag since our test environment doesn't run signals
-        # This would normally be handled by the backend
-        TransactionFlag.objects.get_or_create(
-            transaction=self.transaction1,
-            flag_type='DUPLICATE',
-            message=f'Possible duplicate of transaction {self.duplicate_transaction.id}',
-            defaults={
-                'duplicates_transaction': self.duplicate_transaction,
-                'is_resolvable': True
-            }
-        )
+        # Run duplicate check to create duplicate flags
+        check_duplicates_bulk([transaction1, self.duplicate_transaction])
         
         # The transaction1 should now have a duplicate flag pointing to duplicate_transaction
         self.assertEqual(

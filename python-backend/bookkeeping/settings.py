@@ -78,9 +78,12 @@ WSGI_APPLICATION = 'bookkeeping.wsgi.application'
 
 DATABASES = {
     'default': {
-        # TODO
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'bookkeeping',
+        'USER': 'bookkeeper',
+        'PASSWORD': 'bookpassword',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 

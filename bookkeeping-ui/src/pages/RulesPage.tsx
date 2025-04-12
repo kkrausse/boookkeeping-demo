@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   useQuery,
   useMutation,
@@ -8,16 +8,17 @@ import {
 import { 
   TransactionRule, 
   fetchTransactionRules, 
-  createTransactionRule,
   updateTransactionRule,
   deleteTransactionRule,
   applyRuleToAll,
   applyAllRules,
   RuleApplyResponse,
-  PaginatedResponse
+  PaginatedResponse,
+  FilterParams,
+  FilterCondition
 } from '../api/transactions';
-import { Edit, Trash2, Plus, Loader2, Play, PlayCircle } from 'lucide-react';
-import { ActionInputs, ActionData } from '../components/ActionInputs';
+import { Edit, Trash2, Plus, Loader2, Play } from 'lucide-react';
+import { FilterInlinePanel } from '../components/FilterInlinePanel';
 import '../components/TransactionTable.css';
 
 // Helper component for rule action rendering
@@ -101,15 +102,15 @@ const RuleConditionSummary = ({ rule }: { rule: TransactionRule }) => {
 
 export function RulesPage() {
   const queryClient = useQueryClient();
-  const [showAddRule, setShowAddRule] = useState(false);
   const [editingRule, setEditingRule] = useState<TransactionRule | null>(null);
+  const [showAddRuleForm, setShowAddRuleForm] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
   
-  // New rule form state
-  const [newRule, setNewRule] = useState<Partial<TransactionRule>>({
-    filter_condition: {},
-    category: '',
-    flag_message: ''
+  // Filter state for the inline filter panel
+  const [filters, setFilters] = useState<FilterParams>({
+    description: '',
+    amountValue: '',
+    amountComparison: '>'
   });
   
   // Fetch all rules
@@ -121,19 +122,7 @@ export function RulesPage() {
   
   const rules = data?.results || [];
   
-  // Create rule mutation
-  const createMutation = useMutation({
-    mutationFn: createTransactionRule,
-    onSuccess: () => {
-      setShowAddRule(false);
-      showNotification('success', 'Rule created successfully');
-      resetForm();
-      queryClient.invalidateQueries({ queryKey: ['rules'] });
-    },
-    onError: (error) => {
-      showNotification('error', error instanceof Error ? error.message : 'Failed to create rule');
-    }
-  });
+  // This mutation has been replaced by the FilterInlinePanel component's internal mutation
   
   // Update rule mutation
   const updateMutation = useMutation({
@@ -186,11 +175,9 @@ export function RulesPage() {
   });
   
   const resetForm = () => {
-    setNewRule({
-      filter_condition: {},
-      category: '',
-      flag_message: ''
-    });
+    // Clear filters for the inline panel
+    clearFilters();
+    setEditingRule(null);
   };
   
   const showNotification = (type: 'success' | 'error', message: string) => {
@@ -202,79 +189,28 @@ export function RulesPage() {
     }, 3000);
   };
   
-  const handleFormChange = (field: keyof TransactionRule, value: string) => {
-    if (editingRule) {
-      setEditingRule({
-        ...editingRule,
-        [field]: value
-      });
-    } else {
-      setNewRule({
-        ...newRule,
-        [field]: value
-      });
-    }
-  };
-
-  // New function to handle filter condition changes
-  const handleFilterConditionChange = (filterType: string, value: any) => {
-    const rule = editingRule || newRule;
-    const updatedCondition = { ...rule.filter_condition } || {};
-    
-    if (filterType === 'description' && value) {
-      updatedCondition['description__icontains'] = value;
-    } else if (filterType === 'description' && !value) {
-      delete updatedCondition['description__icontains'];
-    } else if (filterType === 'amount' && value.comparison && value.value) {
-      // Map UI comparison to Django filter syntax
-      const fieldMap = {
-        'above': 'amount__gt',
-        'below': 'amount__lt',
-        'equal': 'amount'
-      };
-      
-      const field = fieldMap[value.comparison as keyof typeof fieldMap] || '';
-      if (field) {
-        // Remove any existing amount filters
-        Object.keys(updatedCondition).forEach(key => {
-          if (key.startsWith('amount')) {
-            delete updatedCondition[key];
-          }
-        });
-        
-        // Add the new filter
-        updatedCondition[field] = parseFloat(value.value);
-      }
-    } else if (filterType === 'amount' && (!value.comparison || !value.value)) {
-      // Remove any existing amount filters if either comparison or value is missing
-      Object.keys(updatedCondition).forEach(key => {
-        if (key.startsWith('amount')) {
-          delete updatedCondition[key];
-        }
-      });
-    }
-    
-    if (editingRule) {
-      setEditingRule({
-        ...editingRule,
-        filter_condition: updatedCondition
-      });
-    } else {
-      setNewRule({
-        ...newRule,
-        filter_condition: updatedCondition
-      });
-    }
+  // Function to check if any filters are active
+  const isFiltersActive = () => {
+    return !!(filters.description || (filters.amountValue && filters.amountComparison));
   };
   
+  // Function to clear all filters
+  const clearFilters = () => {
+    setFilters({
+      description: '',
+      amountValue: '',
+      amountComparison: '>'
+    });
+  };
+  
+  // These functions have been replaced by FilterInlinePanel's internal handlers
+  
   const handleSaveRule = () => {
-    const ruleData = editingRule || newRule;
-    
     // Validate the rule
-    const hasCondition = ruleData.filter_condition && 
-      Object.keys(ruleData.filter_condition).length > 0;
+    const hasCondition = editingRule?.filter_condition && 
+      Object.keys(editingRule.filter_condition).length > 0;
       
-    const hasAction = !!ruleData.category || !!ruleData.flag_message;
+    const hasAction = !!editingRule?.category || !!editingRule?.flag_message;
     
     if (!hasCondition) {
       showNotification('error', 'Please specify at least one condition');
@@ -288,11 +224,9 @@ export function RulesPage() {
     
     if (editingRule && editingRule.id) {
       updateMutation.mutate({
-        ...ruleData,
+        ...editingRule,
         id: editingRule.id
       } as TransactionRule & { id: number });
-    } else {
-      createMutation.mutate(ruleData);
     }
   };
   
@@ -304,12 +238,12 @@ export function RulesPage() {
   
   const handleEditRule = (rule: TransactionRule) => {
     setEditingRule(rule);
-    setShowAddRule(true);
+    setShowAddRuleForm(false);
   };
   
   const handleCancelEdit = () => {
     setEditingRule(null);
-    setShowAddRule(false);
+    setShowAddRuleForm(false);
     resetForm();
   };
   
@@ -321,7 +255,7 @@ export function RulesPage() {
     applyAllRulesMutation.mutate();
   };
   
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = updateMutation.isPending || applyRuleMutation.isPending || applyAllRulesMutation.isPending;
   
   const totalRules = data?.count || 0;
 
@@ -342,153 +276,38 @@ export function RulesPage() {
           <button
             className="add-button"
             onClick={() => {
-              setShowAddRule(!showAddRule);
               setEditingRule(null);
-              resetForm();
+              setShowAddRuleForm(!showAddRuleForm);
+              if (!showAddRuleForm) {
+                resetForm();
+              }
             }}
-            title={showAddRule ? "Cancel" : "Add new rule"}
+            title={showAddRuleForm ? "Cancel" : "Add new rule"}
           >
             <Plus size={18} />
-            <span>Add Rule</span>
+            <span>{showAddRuleForm ? "Cancel" : "Add Rule"}</span>
           </button>
         </div>
       </div>
       
-      {showAddRule && (
+      {/* Show the FilterInlinePanel form only when Add Rule is clicked */}
+      {showAddRuleForm && !editingRule && (
         <div className="rule-form-container">
-          <h3>{editingRule ? 'Edit Rule' : 'Create New Rule'}</h3>
-          <div className="rule-form">
-            <div className="form-section">
-              <h4>Rule Conditions</h4>
-              <div className="form-row">
-                <label>
-                  Description Contains:
-                  <input 
-                    type="text"
-                    value={(editingRule?.filter_condition?.['description__icontains'] || 
-                           newRule.filter_condition?.['description__icontains'] || '')}
-                    onChange={(e) => handleFilterConditionChange('description', e.target.value)}
-                    placeholder="Enter text to match in description"
-                  />
-                </label>
-              </div>
-              
-              <div className="form-row">
-                <label>
-                  Amount:
-                  <div className="amount-input-group">
-                    <select 
-                      value={
-                        // Determine the comparison type from the filter_condition
-                        Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__gt') ? 'above' :
-                        Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__lt') ? 'below' :
-                        Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount') ? 'equal' : ''
-                      }
-                      onChange={(e) => {
-                        const amountValue = 
-                          (editingRule?.filter_condition?.['amount__gt'] || 
-                          editingRule?.filter_condition?.['amount__lt'] || 
-                          editingRule?.filter_condition?.['amount'] ||
-                          newRule.filter_condition?.['amount__gt'] || 
-                          newRule.filter_condition?.['amount__lt'] || 
-                          newRule.filter_condition?.['amount'] || '');
-                        
-                        handleFilterConditionChange('amount', {
-                          comparison: e.target.value,
-                          value: amountValue
-                        });
-                      }}
-                    >
-                      <option value="">Select comparison...</option>
-                      <option value="above">Above</option>
-                      <option value="below">Below</option>
-                      <option value="equal">Equal to</option>
-                    </select>
-                    <input 
-                      type="number"
-                      value={
-                        // Get the amount value from the appropriate filter condition
-                        (editingRule?.filter_condition?.['amount__gt'] || 
-                         editingRule?.filter_condition?.['amount__lt'] || 
-                         editingRule?.filter_condition?.['amount'] ||
-                         newRule.filter_condition?.['amount__gt'] || 
-                         newRule.filter_condition?.['amount__lt'] || 
-                         newRule.filter_condition?.['amount'] || '')
-                      }
-                      onChange={(e) => {
-                        const comparison = 
-                          Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__gt') ? 'above' :
-                          Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__lt') ? 'below' :
-                          Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount') ? 'equal' : '';
-                          
-                        handleFilterConditionChange('amount', {
-                          comparison,
-                          value: e.target.value
-                        });
-                      }}
-                      placeholder="Enter amount"
-                      disabled={!Object.keys(editingRule?.filter_condition || newRule.filter_condition || {})
-                        .some(k => ['amount__gt', 'amount__lt', 'amount'].includes(k))}
-                    />
-                  </div>
-                </label>
-              </div>
-            </div>
-            
-            <div className="form-section">
-              <h4>Rule Actions</h4>
-              <ActionInputs
-                onActionChange={(actionData) => {
-                  // Update rule data when actions change
-                  if (editingRule) {
-                    setEditingRule({
-                      ...editingRule,
-                      category: actionData.category,
-                      flag_message: actionData.flagMessage
-                    });
-                  } else {
-                    setNewRule({
-                      ...newRule,
-                      category: actionData.category,
-                      flag_message: actionData.flagMessage
-                    });
-                  }
-                }}
-                initialData={{
-                  category: editingRule?.category || newRule.category || '',
-                  flagMessage: editingRule?.flag_message || newRule.flag_message || ''
-                }}
-                showTitle={false}
-                disabled={isPending}
-              />
-            </div>
-            
-            <div className="form-actions">
-              <button 
-                className="cancel-button"
-                onClick={handleCancelEdit}
-                disabled={isPending}
-              >
-                Cancel
-              </button>
-              <button 
-                className="save-button"
-                onClick={handleSaveRule}
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <>
-                    <Loader2 className="spinner-icon" size={16} />
-                    Saving...
-                  </>
-                ) : (
-                  'Save Rule'
-                )}
-              </button>
-            </div>
+          <div className="filter-rule-container">
+            <h3>Create New Rule</h3>
+            <FilterInlinePanel
+              filters={filters}
+              onFilterChange={setFilters}
+              isFiltersActive={isFiltersActive()}
+              clearFilters={clearFilters}
+              showNotification={showNotification}
+              alwaysShowRulePanel={true}
+            />
           </div>
         </div>
       )}
+      
+      {/* The edit form will be rendered inside the table */}
       
       <div className="transaction-table-container">
         <table className="transaction-table">
@@ -512,41 +331,171 @@ export function RulesPage() {
               </tr>
             ) : rules.length > 0 ? (
               rules.map(rule => (
-                <tr key={rule.id}>
-                  <td>
-                    <RuleConditionSummary rule={rule} />
-                  </td>
-                  <td>
-                    <RuleActionSummary rule={rule} />
-                  </td>
-                  <td>
-                    {rule.created_at ? new Date(rule.created_at).toLocaleString() : ''}
-                  </td>
-                  <td className="action-buttons">
-                    <button
-                      className="icon-button edit-button"
-                      onClick={() => handleEditRule(rule)}
-                      title="Edit rule"
-                    >
-                      <Edit size={18} />
-                    </button>
-                    <button
-                      className="icon-button apply-button"
-                      onClick={() => rule.id && handleApplyRule(rule.id)}
-                      disabled={applyRuleMutation.isPending}
-                      title="Apply rule to all transactions"
-                    >
-                      <Play size={18} />
-                    </button>
-                    <button
-                      className="icon-button delete-button"
-                      onClick={() => rule.id && handleDeleteRule(rule.id)}
-                      title="Delete rule"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </td>
-                </tr>
+                <React.Fragment key={rule.id}>
+                  <tr>
+                    <td>
+                      <RuleConditionSummary rule={rule} />
+                    </td>
+                    <td>
+                      <RuleActionSummary rule={rule} />
+                    </td>
+                    <td>
+                      {rule.created_at ? new Date(rule.created_at).toLocaleString() : ''}
+                    </td>
+                    <td className="action-buttons">
+                      <button
+                        className="icon-button edit-button"
+                        onClick={() => handleEditRule(rule)}
+                        title="Edit rule"
+                      >
+                        <Edit size={18} />
+                      </button>
+                      <button
+                        className="icon-button apply-button"
+                        onClick={() => rule.id && handleApplyRule(rule.id)}
+                        disabled={applyRuleMutation.isPending}
+                        title="Apply rule to all transactions"
+                      >
+                        <Play size={18} />
+                      </button>
+                      <button
+                        className="icon-button delete-button"
+                        onClick={() => rule.id && handleDeleteRule(rule.id)}
+                        title="Delete rule"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                  {editingRule && editingRule.id === rule.id && (
+                    <tr className="rule-form-container edit-rule-row">
+                      <td colSpan={4}>
+                        <div className="edit-rule-container">
+                          <h3>Edit Rule</h3>
+                          <div className="filter-rule-container">
+                            <FilterInlinePanel
+                              filters={{
+                                description: editingRule.filter_condition?.description__icontains || '',
+                                amountValue: String(editingRule.filter_condition?.amount__gt || 
+                                          editingRule.filter_condition?.amount__lt || 
+                                          editingRule.filter_condition?.amount || ''),
+                                amountComparison: Object.keys(editingRule.filter_condition || {}).some(k => k === 'amount__gt') ? '>' :
+                                              Object.keys(editingRule.filter_condition || {}).some(k => k === 'amount__lt') ? '<' :
+                                              Object.keys(editingRule.filter_condition || {}).some(k => k === 'amount') ? '=' : '>'
+                              }}
+                              onFilterChange={(newFilters) => {
+                                // Create a function to handle the update to avoid inline complexity
+                                const updateRuleFilters = () => {
+                                  const updatedCondition: FilterCondition = { ...editingRule.filter_condition } || {};
+                                  
+                                  // Update description filter
+                                  if (newFilters.description) {
+                                    updatedCondition.description__icontains = newFilters.description;
+                                  } else {
+                                    delete updatedCondition.description__icontains;
+                                  }
+                                  
+                                  // Update amount filters
+                                  Object.keys(updatedCondition).forEach(key => {
+                                    if (key.startsWith('amount')) {
+                                      delete updatedCondition[key as keyof FilterCondition];
+                                    }
+                                  });
+                                  
+                                  if (newFilters.amountValue && newFilters.amountComparison) {
+                                    const amountValue = parseFloat(newFilters.amountValue);
+                                    
+                                    if (!isNaN(amountValue)) {
+                                      switch (newFilters.amountComparison) {
+                                        case '>':
+                                          updatedCondition.amount__gt = amountValue;
+                                          break;
+                                        case '<':
+                                          updatedCondition.amount__lt = amountValue;
+                                          break;
+                                        case '=':
+                                          updatedCondition.amount = amountValue;
+                                          break;
+                                      }
+                                    }
+                                  }
+                                  
+                                  // Check if there are actual changes to prevent loops
+                                  const currentDesc = editingRule.filter_condition?.description__icontains || '';
+                                  const currentAmountGt = editingRule.filter_condition?.amount__gt;
+                                  const currentAmountLt = editingRule.filter_condition?.amount__lt;
+                                  const currentAmount = editingRule.filter_condition?.amount;
+                                  
+                                  const hasDescriptionChange = 
+                                    (updatedCondition.description__icontains || '') !== currentDesc;
+                                    
+                                  const hasAmountChange = 
+                                    updatedCondition.amount__gt !== currentAmountGt ||
+                                    updatedCondition.amount__lt !== currentAmountLt ||
+                                    updatedCondition.amount !== currentAmount;
+                                    
+                                  if (hasDescriptionChange || hasAmountChange) {
+                                    setEditingRule({
+                                      ...editingRule,
+                                      filter_condition: updatedCondition
+                                    });
+                                  }
+                                };
+                                
+                                updateRuleFilters();
+                              }}
+                              isFiltersActive={true}
+                              clearFilters={() => {
+                                setEditingRule({
+                                  ...editingRule,
+                                  filter_condition: {}
+                                });
+                              }}
+                              showNotification={showNotification}
+                              alwaysShowRulePanel={true}
+                              initialCategory={editingRule.category}
+                              initialFlagMessage={editingRule.flag_message}
+                              onActionChange={(category, flagMessage) => {
+                                // Only update if values actually changed to prevent loops
+                                if (category !== editingRule.category || 
+                                    flagMessage !== editingRule.flag_message) {
+                                  setEditingRule({
+                                    ...editingRule,
+                                    category: category || undefined,
+                                    flag_message: flagMessage || undefined
+                                  });
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="form-actions">
+                            <button 
+                              className="cancel-button"
+                              onClick={handleCancelEdit}
+                              disabled={isPending}
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              className="save-button"
+                              onClick={handleSaveRule}
+                              disabled={isPending}
+                            >
+                              {isPending ? (
+                                <>
+                                  <Loader2 className="spinner-icon" size={16} />
+                                  Saving...
+                                </>
+                              ) : (
+                                'Save Rule'
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))
             ) : (
               <tr>

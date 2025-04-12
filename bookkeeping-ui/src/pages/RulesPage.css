@@ -61,6 +61,37 @@
   margin-bottom: 16px;
 }
 
+.filter-rule-container {
+  width: 100%;
+}
+
+/* Custom styling for the inline rule panel when used in RulesPage */
+.rule-form-container .inline-rule-panel {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+.rule-form-container .filter-inline-panel {
+  margin-bottom: 16px;
+}
+
+/* Edit Rule Row Styles */
+.edit-rule-row {
+  display: table-row;
+  background-color: #f8f9fa;
+}
+
+.edit-rule-container {
+  padding: 16px;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.edit-rule-container h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
 .rule-form {
   display: flex;
   flex-direction: column;

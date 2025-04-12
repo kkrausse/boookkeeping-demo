@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FilterParams, 
   TransactionRule, 
@@ -21,6 +21,10 @@ type FilterInlinePanelProps = {
   showNotification: (type: 'success' | 'error', message: string) => void;
   totalCount?: number;
   flagCount?: number;
+  alwaysShowRulePanel?: boolean; // Prop to control rule panel visibility
+  initialCategory?: string; // Initial category value for editing
+  initialFlagMessage?: string; // Initial flag message for editing
+  onActionChange?: (category: string, flagMessage: string) => void; // Callback for action changes when editing
 };
 
 export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
@@ -30,7 +34,11 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
   clearFilters,
   showNotification,
   totalCount,
-  flagCount
+  flagCount,
+  alwaysShowRulePanel = false, // Default to false for backward compatibility
+  initialCategory = '',
+  initialFlagMessage = '',
+  onActionChange
 }) => {
   const [localFilters, setLocalFilters] = useState<FilterParams>({
     description: filters.description || '',
@@ -38,23 +46,67 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
     amountComparison: filters.amountComparison || ''
   });
   
-  const [showRulePanel, setShowRulePanel] = useState(false);
-  const [category, setCategory] = useState('');
-  const [flagMessage, setFlagMessage] = useState('');
+  // Ref to track initial render for various effects
+  const isInitialRender = useRef(true);
+  
+  const [showRulePanel, setShowRulePanel] = useState(alwaysShowRulePanel);
+  const [category, setCategory] = useState(initialCategory);
+  const [flagMessage, setFlagMessage] = useState(initialFlagMessage);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const queryClient = useQueryClient();
   const createRuleMutation = useCreateTransactionRule({
     pollingInterval: 1000, // 1 second polling interval for real-time updates
   });
+  
+  // Set isInitialRender to false after the first render
+  useEffect(() => {
+    isInitialRender.current = false;
+  }, []);
+  
+  // Update showRulePanel when alwaysShowRulePanel prop changes
+  useEffect(() => {
+    if (alwaysShowRulePanel) {
+      setShowRulePanel(true);
+    }
+  }, [alwaysShowRulePanel]);
+  
+  // Update category and flag message when props change (for editing)
+  // Use refs to prevent unnecessary updates
+  const initialCategoryRef = React.useRef(initialCategory);
+  const initialFlagMessageRef = React.useRef(initialFlagMessage);
+
+  useEffect(() => {
+    // Only update state if props actually changed from their previous values
+    if (initialCategoryRef.current !== initialCategory) {
+      setCategory(initialCategory);
+      initialCategoryRef.current = initialCategory;
+    }
+    
+    if (initialFlagMessageRef.current !== initialFlagMessage) {
+      setFlagMessage(initialFlagMessage);
+      initialFlagMessageRef.current = initialFlagMessage;
+    }
+  }, [initialCategory, initialFlagMessage]);
 
   // Update local filters when props change
+  const filtersRef = useRef(filters);
+  
   useEffect(() => {
-    setLocalFilters({
-      description: filters.description || '',
-      amountValue: filters.amountValue || '',
-      amountComparison: filters.amountComparison || ''
-    });
+    // Deep compare filters to avoid unnecessary updates
+    const filterChanged = 
+      filtersRef.current.description !== filters.description ||
+      filtersRef.current.amountValue !== filters.amountValue ||
+      filtersRef.current.amountComparison !== filters.amountComparison;
+    
+    if (filterChanged) {
+      setLocalFilters({
+        description: filters.description || '',
+        amountValue: filters.amountValue || '',
+        amountComparison: filters.amountComparison || ''
+      });
+      filtersRef.current = {...filters};
+    }
   }, [filters]);
 
   // This function is for local UI updates before sending to parent
@@ -67,6 +119,11 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
 
   // Apply filters when user stops typing
   useEffect(() => {
+    // Skip first render
+    if (isInitialRender.current) {
+      return;
+    }
+    
     const timer = setTimeout(() => {
       // Only apply if different from current filters
       if (
@@ -74,7 +131,6 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
         localFilters.amountValue !== filters.amountValue ||
         localFilters.amountComparison !== filters.amountComparison
       ) {
-        console.log('changing filters', localFilters, filters)
         onFilterChange(localFilters);
       }
     }, 300); // Small debounce
@@ -82,13 +138,39 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
     return () => clearTimeout(timer);
   }, [localFilters, filters, onFilterChange]);
   
-  // Close rule panel when filters are cleared
+  // Close rule panel when filters are cleared, unless alwaysShowRulePanel is true
   useEffect(() => {
-    if (!isFiltersActive && showRulePanel) {
+    if (!alwaysShowRulePanel && !isFiltersActive && showRulePanel) {
       setShowRulePanel(false);
     }
-  }, [isFiltersActive, showRulePanel]);
+  }, [isFiltersActive, showRulePanel, alwaysShowRulePanel]);
   
+  // Call the onActionChange callback when category or flag message changes (for editing)
+  // We use refs to track previous values to detect actual changes
+  const prevCategory = React.useRef(category);
+  const prevFlagMessage = React.useRef(flagMessage);
+  
+  useEffect(() => {
+    // Skip the callback on initial render or when the change came from props
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      return;
+    }
+    
+    // Only call the callback if the values changed due to user action
+    // and not due to prop changes
+    const categoryChanged = prevCategory.current !== category;
+    const flagMessageChanged = prevFlagMessage.current !== flagMessage;
+    
+    if ((categoryChanged || flagMessageChanged) && onActionChange) {
+      onActionChange(category, flagMessage);
+    }
+    
+    // Update refs for next comparison
+    prevCategory.current = category;
+    prevFlagMessage.current = flagMessage;
+  }, [category, flagMessage, onActionChange]);
+
   const handleCreateRule = () => {
     // Validation checks
     if (!category && !flagMessage) {
@@ -176,7 +258,7 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
               type="text"
               value={localFilters.description}
               onChange={(e) => handleLocalFilterChange('description', e.target.value)}
-              placeholder="Search descriptions..."
+              placeholder="Description contains words..."
               className="inline-filter-input"
             />
           </div>
@@ -213,7 +295,7 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
           </button>
         )}
         
-        {isFiltersActive && (
+        {isFiltersActive && !alwaysShowRulePanel && (
           <button 
             className="inline-rule-button"
             onClick={() => setShowRulePanel(!showRulePanel)}
@@ -249,27 +331,31 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
               />
             </div>
             
-            <button 
-              className="inline-create-rule-button"
-              onClick={handleCreateRule}
-              disabled={isSubmitting || (!category && !flagMessage)}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="inline-spinner-icon" size={14} />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Save size={14} />
-                  Create Rule
-                </>
-              )}
-            </button>
+            {!onActionChange && (
+              <button 
+                className="inline-create-rule-button"
+                onClick={handleCreateRule}
+                disabled={isSubmitting || (!category && !flagMessage)}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="inline-spinner-icon" size={14} />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} />
+                    Create Rule
+                  </>
+                )}
+              </button>
+            )}
           </div>
-          <div className="inline-rule-hint">
-            This rule will apply to all transactions matching your current filters
-          </div>
+          {!onActionChange && (
+            <div className="inline-rule-hint">
+              This rule will apply to all transactions matching your current filters
+            </div>
+          )}
         </div>
       )}
     </div>

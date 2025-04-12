@@ -292,7 +292,7 @@ def apply_transaction_rules(transactions=None, use_cache=True):
     # Process each rule
     for rule in rules:
         # Apply the rule to all transactions
-        rule_result = apply_transaction_rule(rule=rule, transactions=transactions)
+        rule_result, _ = apply_transaction_rule(rule=rule, transactions=transactions)
         
         # Accumulate results
         total_result['updated_count'] += rule_result['updated_count']
@@ -323,6 +323,109 @@ def determine_flag_resolvability(flag_data):
     
     # PARSE_ERROR flags are not resolvable
     return False
+
+def clear_transaction_flags_bulk(transactions, flag_types=None, only_unresolved=True):
+    """
+    Clear flags for multiple transactions in bulk.
+    
+    Args:
+        transactions: List or QuerySet of Transaction objects
+        flag_types: List of flag types to clear (default: ['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH'])
+        only_unresolved: Whether to only clear unresolved flags (default: True)
+        
+    Returns:
+        int: Number of flags deleted
+    """
+    from .models import TransactionFlag
+    
+    # Default flag types if none provided
+    if flag_types is None:
+        flag_types = ['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH']
+    
+    # Build query filter
+    query_filter = {
+        'transaction__in': transactions,
+        'flag_type__in': flag_types
+    }
+    
+    # Add resolved filter if needed
+    if only_unresolved:
+        query_filter['is_resolved'] = False
+    
+    # Delete flags in a single operation
+    result = TransactionFlag.objects.filter(**query_filter).delete()
+    
+    # Return count of deleted flags (first item in tuple)
+    return result[0] if isinstance(result, tuple) else result
+
+def create_validation_flags_bulk(transactions, original_data_map=None, clear_existing_flags=False):
+    """
+    Generate and create validation flags for multiple transactions in bulk.
+    
+    Args:
+        transactions: List or QuerySet of Transaction objects
+        original_data_map: Dictionary mapping transaction IDs to their original data (optional)
+        clear_existing_flags: Whether to clear existing flags before creating new ones (default: False)
+        
+    Returns:
+        dict: Mapping of transaction IDs to their created flags
+    """
+    from .models import TransactionFlag
+    from django.db import transaction as db_transaction
+    
+    # Default empty map if none provided
+    if original_data_map is None:
+        original_data_map = {}
+        
+    # Optionally clear existing flags
+    if clear_existing_flags and transactions:
+        clear_transaction_flags_bulk(transactions)
+    
+    # Generate validation flags for all transactions
+    all_flag_objects = []
+    transaction_flags_map = {}
+    
+    # Process each transaction
+    for transaction in transactions:
+        # Get original data if available
+        original_data = original_data_map.get(transaction.id)
+        
+        # Generate validation flags for this transaction
+        validation_flags = transaction_validation_flags(transaction, original_data)
+        
+        # Initialize empty list for this transaction in the map
+        if transaction.id not in transaction_flags_map:
+            transaction_flags_map[transaction.id] = []
+        
+        # Create TransactionFlag objects and add to bulk creation list
+        for flag_data in validation_flags:
+            is_resolvable = determine_flag_resolvability(flag_data)
+            
+            # Create flag object for bulk creation
+            flag_object = TransactionFlag(
+                transaction=transaction,
+                flag_type=flag_data['flag_type'],
+                message=flag_data['message'],
+                is_resolvable=is_resolvable,
+                is_resolved=False
+            )
+            
+            all_flag_objects.append(flag_object)
+            
+            # Add to our flags map (deep copy to avoid modification)
+            flag_copy = flag_data.copy()
+            flag_copy['created'] = True
+            transaction_flags_map[transaction.id].append(flag_copy)
+    
+    # Bulk create all flags in a single database operation
+    with db_transaction.atomic():
+        if all_flag_objects:
+            TransactionFlag.objects.bulk_create(
+                all_flag_objects,
+                ignore_conflicts=True  # Skip duplicates
+            )
+    
+    return transaction_flags_map
 
 def create_transaction_flags(transaction, flags):
     """
@@ -520,13 +623,15 @@ def apply_transaction_rule(rule_id=None, rule=None, transactions=None):
     
     # Process in batches for better performance
     batch_size = 1000
+    tids = []
     for i in range(0, filtered_queryset.count(), batch_size):
         batch = filtered_queryset[i:i+batch_size]
         
         # Process rule actions
         for transaction in batch:
             modified = False
-            
+
+            tids.append(transaction.id)
             # Apply category if rule has one and transaction doesn't
             if rule.category and not transaction.category:
                 transaction.category = rule.category
@@ -555,8 +660,8 @@ def apply_transaction_rule(rule_id=None, rule=None, transactions=None):
         'rule_id': rule.id,
         'updated_count': update_count,
         'flag_count': flag_count,
-        'processed_count': filtered_queryset.count()
-    }
+        'processed_count': filtered_queryset.count(),
+    }, Transaction.objects.filter(id__in=tids)
 
 def create_clean_transactions(data_list):
     """
@@ -566,11 +671,13 @@ def create_clean_transactions(data_list):
         data_list: List of dictionaries containing transaction data
         
     Returns:
-        list: List of created Transaction objects
+        tuple: (list of created Transaction objects, list of cleaned data dictionaries, list of original data)
     """
     from .models import Transaction
     
-    created_transactions = []
+    # Process each data item
+    cleaned_data_list = []
+    valid_original_data = []
     
     for data in data_list:
         # Clean the data
@@ -580,12 +687,80 @@ def create_clean_transactions(data_list):
         if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
             continue  # Skip invalid data
         
-        # Create transaction
-        transaction = Transaction(**cleaned_data)
-        transaction.save()
-        created_transactions.append(transaction)
+        # Keep track of cleaned data and original data for valid entries
+        cleaned_data_list.append(cleaned_data)
+        valid_original_data.append(data)
     
-    return created_transactions
+    # Bulk create transactions for better performance
+    transactions_to_create = [Transaction(**clean_data) for clean_data in cleaned_data_list]
+    created_transactions = Transaction.objects.bulk_create(transactions_to_create)
+    
+    return created_transactions, cleaned_data_list, valid_original_data
+
+def create_transactions_with_flags_bulk(data_list):
+    """
+    Create multiple transactions from a list of data, apply rules, and handle flags in bulk.
+    
+    Args:
+        data_list: List of dictionaries containing transaction data
+        
+    Returns:
+        tuple: (list of transaction objects, dict mapping transaction IDs to their flags)
+    """
+    from .models import Transaction, TransactionFlag
+    from django.db import transaction as db_transaction
+    
+    # Handle empty list case
+    if not data_list:
+        return [], {}
+    
+    # Step 1: Bulk create transactions with cleaned data
+    created_transactions, cleaned_data_list, original_data_list = create_clean_transactions(data_list)
+    
+    if not created_transactions:
+        return [], {}
+    
+    # Step 2: Apply transaction rules to all new transactions
+    from django.db.models import QuerySet
+    
+    # If it's a list, convert it to a queryset for compatibility with apply_transaction_rules
+    if created_transactions:
+        transaction_ids = [t.id for t in created_transactions]
+        # Create a queryset from the transaction IDs
+        transaction_queryset = Transaction.objects.filter(id__in=transaction_ids)
+        apply_transaction_rules(transaction_queryset)
+    
+    # Need to refresh transactions from the database to get their updated values and IDs
+    transaction_ids = [t.id for t in created_transactions]
+    refreshed_transactions = list(Transaction.objects.filter(id__in=transaction_ids))
+    
+    # Step 3: Create a mapping of transaction ID to original data
+    original_data_map = {}
+    for i, transaction in enumerate(refreshed_transactions):
+        if i < len(original_data_list):
+            original_data_map[transaction.id] = original_data_list[i]
+    
+    # Step 4: Use the bulk validation flag function to create validation flags
+    # For new transactions, we don't need to clear existing flags
+    validation_flags_map = create_validation_flags_bulk(refreshed_transactions, original_data_map, clear_existing_flags=False)
+    
+    # Initialize transaction_flags_map with validation flags
+    transaction_flags_map = validation_flags_map
+    
+    # Step 5: Get rule flags for each transaction
+    for transaction in refreshed_transactions:
+        rule_flags = []
+        for flag in transaction.flags.filter(flag_type='RULE_MATCH'):
+            rule_flags.append({
+                'flag_type': flag.flag_type,
+                'message': flag.message,
+                'is_resolvable': flag.is_resolvable,
+                'created': True
+            })
+        transaction_flags_map[transaction.id].extend(rule_flags)
+    
+    # Return transactions and their flags
+    return refreshed_transactions, transaction_flags_map
 
 def create_transaction_with_flags(data):
     """
@@ -657,14 +832,9 @@ def update_transaction_with_flags(transaction, data):
     
     # Clear existing unresolved parse error, missing data, and rule match flags
     # Keep custom flags and resolved flags intact
-    TransactionFlag.objects.filter(
-        transaction=transaction,
-        flag_type__in=['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH'],
-        is_resolved=False  # Only delete unresolved flags
-    ).delete()
+    clear_transaction_flags_bulk([transaction], ['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH'], only_unresolved=True)
     
     # Update transaction with the cleaned data
-    print('clean data items', cleaned_data.items())
     for key, value in cleaned_data.items():
         setattr(transaction, key, value)
     transaction.save()

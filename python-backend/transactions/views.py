@@ -14,7 +14,7 @@ import time
 import functools
 from .models import Transaction, TransactionFlag, TransactionRule
 from .serializers import TransactionSerializer, TransactionCSVSerializer, TransactionRuleSerializer
-from .utils import create_transaction_with_flags, update_transaction_with_flags, timer, apply_transaction_rules, apply_transaction_rule
+from .utils import create_transaction_with_flags, clear_transaction_flags_bulk, create_validation_flags_bulk, update_transaction_with_flags, timer, apply_transaction_rules, apply_transaction_rule
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -190,7 +190,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         # Import here to avoid circular imports
-        from .utils import get_cached_rules
+        from .utils import get_cached_rules, create_transactions_with_flags_bulk
 
         # Preload rules cache before processing CSV
         # This ensures we only fetch rules once for the entire upload
@@ -209,45 +209,58 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Process each row
+        logger.info(f"CSV parsing started at {time.time() - start_time:.3f}s")
+        preprocessing_start = time.time()
+        
+        # Read all rows from CSV into memory
+        rows = []
+        row_nums = {}  # Map to keep track of original row numbers
+        for row_num, row in enumerate(reader, start=1):
+            rows.append(row)
+            # Store original row number for each row
+            row_nums[len(rows) - 1] = row_num
+        
+        logger.info(f"Read {len(rows)} rows from CSV in {time.time() - preprocessing_start:.3f}s")
+        
+        # Handle empty file
+        if not rows:
+            return Response(
+                {"error": "CSV file is empty or contains no valid data"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Process all rows in bulk
+        processing_start = time.time()
         created_transactions = []
         skipped_rows = []
         warnings = []
-
-        logger.info(f"CSV parsing started at {time.time() - start_time:.3f}s")
-        row_count = 0
-        processing_start = time.time()
         
-        for row_num, row in enumerate(reader, start=1):
-            row_count += 1
-            try:
-                # Use the utility function to create transaction with flags
-                # Rules will be fetched from cache due to the preloading above
-                transaction, flags = create_transaction_with_flags(row)
-                created_transactions.append(transaction)
-                
-                # Add warning if we had any flags
-                if flags:
-                    formatted_flags = ", ".join([f"{flag['flag_type']}: {flag['message']}" for flag in flags])
-                    warnings.append(f"Row {row_num}: Created with warnings - {formatted_flags}")
-                
-            except Exception as e:
-                # Convert technical errors to user-friendly messages
-                error_msg = str(e)
-                if "NOT NULL constraint failed" in error_msg and "datetime" in error_msg:
-                    error_msg = "Missing required date field"
-                elif "NOT NULL constraint failed" in error_msg:
-                    field = error_msg.split("NOT NULL constraint failed: transactions_transaction.")[1]
-                    error_msg = f"Missing required {field} field"
-                
-                skipped_rows.append(f"Row {row_num}: {error_msg}")
-
-            # Log progress for large uploads
-            if row_count % 100 == 0:
-                logger.info(f"Processed {row_count} rows in {time.time() - processing_start:.3f}s")
-
+        try:
+            # Use bulk creation mode
+            transactions, flags_map = create_transactions_with_flags_bulk(rows)
+            created_transactions = transactions
+            
+            # Process warnings for each transaction
+            for i, transaction in enumerate(transactions):
+                if transaction.id in flags_map and flags_map[transaction.id]:
+                    formatted_flags = ", ".join([
+                        f"{flag['flag_type']}: {flag['message']}" 
+                        for flag in flags_map[transaction.id]
+                    ])
+                    # Use the original row number from our mapping
+                    original_row_num = row_nums.get(i, i+1)
+                    warnings.append(f"Row {original_row_num}: Created with warnings - {formatted_flags}")
+            
+        except Exception as e:
+            # Handle global errors that affect the entire bulk operation
+            logger.error(f"Error in bulk transaction creation: {str(e)}")
+            return Response(
+                {"error": f"Error processing CSV: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         processing_time = time.time() - processing_start
-        logger.info(f"CSV processing complete: {row_count} rows in {processing_time:.3f}s ({row_count/processing_time:.1f} rows/sec)")
+        logger.info(f"CSV processing complete: {len(rows)} rows in {processing_time:.3f}s ({len(rows)/processing_time:.1f} rows/sec)")
         
         serialization_start = time.time()
         # Serialize the created transactions
@@ -291,17 +304,17 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
             rule = self.get_object()
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Use the optimized apply_transaction_rule function
-        from transactions.utils import apply_transaction_rule
-        
+
         try:
             start_time = time.time()
-            result = apply_transaction_rule(rule.id)
+            result, filtered_queryset = apply_transaction_rule(rule.id)
             total_time = time.time() - start_time
-            
+
+            print('update txns', filtered_queryset)
             # Add time taken to the result
             result['time_taken'] = f"{total_time:.3f}s"
+            clear_transaction_flags_bulk(filtered_queryset, ['PARSE_ERROR', 'MISSING_DATA'], only_unresolved=True)
+            create_validation_flags_bulk(filtered_queryset)
             
             logger.info(f"Rule {rule.id} applied to all transactions: {result['updated_count']} updated in {total_time:.3f}s")
             return Response(result)

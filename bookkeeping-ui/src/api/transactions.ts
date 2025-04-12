@@ -204,6 +204,9 @@ export interface PaginatedResponse<T> {
   count: number;
   next: string | null;
   previous: string | null;
+  flag_counts: {
+    total: number,
+  }
   results: T[];
 }
 

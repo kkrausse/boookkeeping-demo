@@ -76,18 +76,22 @@ class TransactionViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']  # Default ordering
     
     def list(self, request, *args, **kwargs):
-        """Override list to add flag counts by type for the entire collection"""
-        # Get the filtered queryset
-        queryset = self.filter_queryset(self.get_queryset())
+        """
+        Override list to add flag counts by type for the entire filtered collection,
+        not just the current page.
+        """
+        # Get the initial queryset and apply filters
+        filtered_queryset = self.filter_queryset(self.get_queryset())
         
-        # Get total flag counts by type from the database
+        # Get total flag counts by type from the database before pagination
         from django.db.models import Count
         from .models import TransactionFlag
         
-        # Create a query to get flags for all transactions in the queryset
-        transaction_ids = queryset.values_list('id', flat=True)
+        # Create a subquery to get all matching transaction IDs based on the filter
+        # This ensures flag counts are for ALL filtered transactions, not just the current page
+        transaction_ids = filtered_queryset.values_list('id', flat=True)
         
-        # Get counts by flag_type for all flags of transactions in the filtered queryset
+        # Get counts by flag_type for all matching transactions
         flag_counts = TransactionFlag.objects.filter(
             transaction_id__in=transaction_ids,
             is_resolved=False
@@ -99,16 +103,16 @@ class TransactionViewSet(viewsets.ModelViewSet):
         flag_counts_dict = {item['flag_type']: item['count'] for item in flag_counts}
         flag_counts_dict['total'] = sum(flag_counts_dict.values())
         
-        # Continue with standard list logic
-        page = self.paginate_queryset(queryset)
+        # Apply pagination AFTER getting the flag counts
+        page = self.paginate_queryset(filtered_queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             response = self.get_paginated_response(serializer.data)
-            # Add flag counts to the paginated response
+            # Add flag counts to the paginated response (these counts reflect ALL filtered transactions)
             response.data['flag_counts'] = flag_counts_dict
             return response
         
-        serializer = self.get_serializer(queryset, many=True)
+        serializer = self.get_serializer(filtered_queryset, many=True)
         return Response({
             'results': serializer.data,
             'flag_counts': flag_counts_dict

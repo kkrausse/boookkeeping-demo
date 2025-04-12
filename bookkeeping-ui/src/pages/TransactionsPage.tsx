@@ -392,7 +392,7 @@ export function TransactionsPage() {
       )}
       
       <div className="transactions-info">
-        <span>Total: {totalCount}</span>
+      <span>Total: {totalCount}, </span>
         {data?.results && (
           <span className="flag-count-info">
             Flags: {data.results.reduce((count, t) => count + (t.flags?.filter(f => !f.is_resolved).length || 0), 0)}

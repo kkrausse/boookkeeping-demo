@@ -161,7 +161,7 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
     <div className="filter-inline-panel">
       {totalCount !== undefined && (
         <div className="filter-count-info">
-          <div className="total-count">Total: {totalCount}</div>
+          <div className="total-count">Total: {totalCount}, </div>
           {flagCount !== undefined && flagCount > 0 && (
             <div className="flag-count">Flags: {flagCount}</div>
           )}

@@ -609,7 +609,7 @@
 .actions-column:hover::after {
   content: 'Sort by flag count';
   position: absolute;
-  top: -30px;
+  top: -20px;
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(0, 0, 0, 0.7);

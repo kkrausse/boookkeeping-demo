@@ -179,13 +179,13 @@ def clean_transaction_data(data):
     
     return cleaned_data
 
-def transaction_validation_flags(cleaned_data, original_data):
+def transaction_validation_flags(transaction, original_data=None):
     """
-    Generate validation flags for transaction data
+    Generate validation flags for a transaction object
     
     Args:
-        cleaned_data: Dictionary containing parsed/cleaned data
-        original_data: Original unprocessed data for error messages
+        transaction: Transaction object to validate
+        original_data: Original unprocessed data for error messages (optional)
         
     Returns:
         list: List of flag dictionaries
@@ -193,33 +193,35 @@ def transaction_validation_flags(cleaned_data, original_data):
     flags = []
     
     # Flag blank descriptions
-    if not cleaned_data.get('description'):
+    if not transaction.description:
         flags.append({
             'flag_type': 'MISSING_DATA',
             'message': "Missing or blank description"
         })
     
     # Flag missing category
-    if not cleaned_data.get('category'):
+    if not transaction.category:
         flags.append({
             'flag_type': 'MISSING_DATA',
             'message': "Missing category"
         })
     
-    # Add amount parsing error flag if any
-    amount_str = original_data.get('amount', '')
-    if isinstance(amount_str, (int, float, Decimal)):
-        amount_str = str(amount_str)
-    _, amount_flag = parse_amount(amount_str)
-    if amount_flag:
-        flags.append(amount_flag)
-    
-    # Add datetime parsing error flag if any
-    date_str = original_data.get('datetime', '')
-    if not isinstance(date_str, datetime):
-        _, date_flag = parse_datetime(str(date_str) if date_str else '')
-        if date_flag:
-            flags.append(date_flag)
+    # Handle parse error flags only if original_data is provided
+    if original_data:
+        # Add amount parsing error flag if any
+        amount_str = original_data.get('amount', '')
+        if isinstance(amount_str, (int, float, Decimal)):
+            amount_str = str(amount_str)
+        _, amount_flag = parse_amount(amount_str)
+        if amount_flag:
+            flags.append(amount_flag)
+        
+        # Add datetime parsing error flag if any
+        date_str = original_data.get('datetime', '')
+        if not isinstance(date_str, datetime):
+            _, date_flag = parse_datetime(str(date_str) if date_str else '')
+            if date_flag:
+                flags.append(date_flag)
     
     return flags
 
@@ -401,7 +403,7 @@ def merge_transaction_update(transaction, data):
     
     # Update merged data with non-empty values from the update
     for key, value in data_copy.items():
-        if key in merged_data and value not in (None, ''):
+        if key in merged_data: # and value not in (None, ''):
             merged_data[key] = value
     
     return merged_data, custom_flag
@@ -600,16 +602,18 @@ def create_transaction_with_flags(data):
     # Create transaction first (so it exists in the database)
     transaction = Transaction(**cleaned_data)
     transaction.save()
-    
-    # Get validation flags from the data
-    validation_flags = transaction_validation_flags(cleaned_data, data)
+
+    # Apply transaction rules to just this transaction
+    apply_transaction_rules(transaction)
+    # Refresh transaction with any changes made by rules
+    transaction.refresh_from_db()
+
+    # Get validation flags from the transaction (after rules have been applied) and original data
+    validation_flags = transaction_validation_flags(transaction, data)
     
     # Create validation flags first
     create_transaction_flags(transaction, validation_flags)
-    
-    # Apply transaction rules to just this transaction
-    apply_transaction_rules(transaction)
-    
+
     # Get any rule flags that were created (for returning to the caller)
     rule_flags = []
     for flag in transaction.flags.filter(flag_type='RULE_MATCH'):
@@ -651,25 +655,23 @@ def update_transaction_with_flags(transaction, data):
         flag_type__in=['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH']
     ).delete()
     
-    # Store old data before updating for duplicate checking
-    old_description = transaction.description
-    old_amount = transaction.amount
-    old_category = transaction.category
-    
     # Update transaction with the cleaned data
+    print('clean data items', cleaned_data.items())
     for key, value in cleaned_data.items():
         setattr(transaction, key, value)
     transaction.save()
     
-    # Generate validation flags after updating the transaction
-    validation_flags = transaction_validation_flags(cleaned_data, merged_data)
+    # Apply transaction rules to just this transaction
+    apply_transaction_rules(transaction)
+    # Refresh transaction with any changes made by rules
+    transaction.refresh_from_db()
+
+    # Generate validation flags after rules have been applied
+    validation_flags = transaction_validation_flags(transaction, merged_data)
     
     # Create validation flags first
     create_transaction_flags(transaction, validation_flags)
 
-    # Apply transaction rules to just this transaction
-    apply_transaction_rules(transaction)
-    
     # Get any rule flags that were created (for returning to the caller)
     rule_flags = []
     for flag in transaction.flags.filter(flag_type='RULE_MATCH'):

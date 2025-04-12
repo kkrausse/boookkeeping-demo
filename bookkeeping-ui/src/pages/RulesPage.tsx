@@ -17,7 +17,7 @@ import {
   FilterParams,
   FilterCondition
 } from '../api/transactions';
-import { Edit, Trash2, Plus, Loader2, Play } from 'lucide-react';
+import { Edit, Trash2, Plus, Loader2, Play, Check, X } from 'lucide-react';
 import { FilterInlinePanel } from '../components/FilterInlinePanel';
 import '../components/TransactionTable.css';
 
@@ -294,8 +294,14 @@ export function RulesPage() {
       {showAddRuleForm && !editingRule && (
         <div className="rule-form-container">
           <div className="filter-rule-container">
-            <h3>Create New Rule</h3>
             <FilterInlinePanel
+              onSubmit={() => {
+                console.log('kill this shit')
+              setEditingRule(null);
+              setShowAddRuleForm(null);
+              resetForm();
+                clearFilters();
+            }}
               filters={filters}
               onFilterChange={setFilters}
               isFiltersActive={isFiltersActive()}
@@ -343,28 +349,55 @@ export function RulesPage() {
                       {rule.created_at ? new Date(rule.created_at).toLocaleString() : ''}
                     </td>
                     <td className="action-buttons">
-                      <button
-                        className="icon-button edit-button"
-                        onClick={() => handleEditRule(rule)}
-                        title="Edit rule"
-                      >
-                        <Edit size={18} />
-                      </button>
-                      <button
-                        className="icon-button apply-button"
-                        onClick={() => rule.id && handleApplyRule(rule.id)}
-                        disabled={applyRuleMutation.isPending}
-                        title="Apply rule to all transactions"
-                      >
-                        <Play size={18} />
-                      </button>
-                      <button
-                        className="icon-button delete-button"
-                        onClick={() => rule.id && handleDeleteRule(rule.id)}
-                        title="Delete rule"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {editingRule && editingRule.id === rule.id ? (
+                        <>
+                          <button
+                            className="icon-button save-button"
+                            onClick={handleSaveRule}
+                            disabled={isPending}
+                            title="Save changes"
+                          >
+                            {isPending ? (
+                              <Loader2 className="spinner-icon" size={18} />
+                            ) : (
+                              <Check size={18} />
+                            )}
+                          </button>
+                          <button
+                            className="icon-button cancel-button"
+                            onClick={handleCancelEdit}
+                            disabled={isPending}
+                            title="Cancel"
+                          >
+                            <X size={18} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            className="icon-button edit-button"
+                            onClick={() => handleEditRule(rule)}
+                            title="Edit rule"
+                          >
+                            <Edit size={18} />
+                          </button>
+                          <button
+                            className="icon-button apply-button"
+                            onClick={() => rule.id && handleApplyRule(rule.id)}
+                            disabled={applyRuleMutation.isPending}
+                            title="Apply rule to all transactions"
+                          >
+                            <Play size={18} />
+                          </button>
+                          <button
+                            className="icon-button delete-button"
+                            onClick={() => rule.id && handleDeleteRule(rule.id)}
+                            title="Delete rule"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                   {editingRule && editingRule.id === rule.id && (
@@ -375,10 +408,13 @@ export function RulesPage() {
                           <div className="filter-rule-container">
                             <FilterInlinePanel
                               filters={{
+                                taco: editingRule,
                                 description: editingRule.filter_condition?.description__icontains || '',
-                                amountValue: String(editingRule.filter_condition?.amount__gt || 
-                                          editingRule.filter_condition?.amount__lt || 
-                                          editingRule.filter_condition?.amount || ''),
+                                amountValue: String(
+                                  editingRule.filter_condition?.amount__gt ??
+                                    editingRule.filter_condition?.amount__lt ??
+                                    editingRule.filter_condition?.amount ??
+                                    ''),
                                 amountComparison: Object.keys(editingRule.filter_condition || {}).some(k => k === 'amount__gt') ? '>' :
                                               Object.keys(editingRule.filter_condition || {}).some(k => k === 'amount__lt') ? '<' :
                                               Object.keys(editingRule.filter_condition || {}).some(k => k === 'amount') ? '=' : '>'
@@ -467,29 +503,6 @@ export function RulesPage() {
                                 }
                               }}
                             />
-                          </div>
-                          <div className="form-actions">
-                            <button 
-                              className="cancel-button"
-                              onClick={handleCancelEdit}
-                              disabled={isPending}
-                            >
-                              Cancel
-                            </button>
-                            <button 
-                              className="save-button"
-                              onClick={handleSaveRule}
-                              disabled={isPending}
-                            >
-                              {isPending ? (
-                                <>
-                                  <Loader2 className="spinner-icon" size={16} />
-                                  Saving...
-                                </>
-                              ) : (
-                                'Save Rule'
-                              )}
-                            </button>
                           </div>
                         </div>
                       </td>

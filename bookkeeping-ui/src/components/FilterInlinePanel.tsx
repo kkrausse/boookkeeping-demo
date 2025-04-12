@@ -25,6 +25,7 @@ type FilterInlinePanelProps = {
   initialCategory?: string; // Initial category value for editing
   initialFlagMessage?: string; // Initial flag message for editing
   onActionChange?: (category: string, flagMessage: string) => void; // Callback for action changes when editing
+  onSubmit?: () => unknown;
 };
 
 export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
@@ -38,6 +39,7 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
   alwaysShowRulePanel = false, // Default to false for backward compatibility
   initialCategory = '',
   initialFlagMessage = '',
+  onSubmit = () => null,
   onActionChange
 }) => {
   const [localFilters, setLocalFilters] = useState<FilterParams>({
@@ -45,7 +47,7 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
     amountValue: filters.amountValue || '',
     amountComparison: filters.amountComparison || ''
   });
-  
+
   // Ref to track initial render for various effects
   const isInitialRender = useRef(true);
   
@@ -219,12 +221,15 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
     };
     
     setIsSubmitting(true);
-    
+
     // Execute the mutation with the rule data (always apply to all)
     createRuleMutation.mutate({
       rule: ruleData,
       applyToAll: true
     }, {
+      onSettled: () => {
+        onSubmit();
+      },
       onSuccess: () => {
         showNotification('success', 'Rule created and applied to all transactions');
         setShowRulePanel(false);

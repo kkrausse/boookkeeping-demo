@@ -529,6 +529,86 @@ export function useResolveTransactionFlag() {
   });
 }
 
+// Hook for using React Query to update a transaction with optimistic updates
+export function useTransactionUpdateMutation() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (update: Partial<Transaction> & { id: number }) => {
+      const old = queryClient.getQueryData<PaginatedResponse<Transaction>>(
+        TRANSACTION_KEYS.all
+      )?.results.find(t => t.id === update.id);
+      
+      return updateTransaction({ ...old, ...update });
+    },
+    onMutate: async (updatedTransaction) => {
+      // Snapshot the previous value
+      const previousData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
+        TRANSACTION_KEYS.paginated({})
+      );
+
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated({}) });
+      
+      // Optimistically update the cache
+      if (previousData) {
+        queryClient.setQueryData<PaginatedResponse<Transaction>>(
+          TRANSACTION_KEYS.paginated({}),
+          old => {
+            if (!old) return old;
+            return {
+              ...old,
+              results: old.results.map(tx => 
+                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
+              )
+            };
+          }
+        );
+        
+        // Also update any paginated queries
+        const paginatedQueries = queryClient.getQueriesData<PaginatedResponse<Transaction>>({
+          queryKey: ['transactions', 'paginated']
+        });
+        
+        paginatedQueries.forEach(([queryKey, data]) => {
+          if (data) {
+            queryClient.setQueryData(queryKey, {
+              ...data,
+              results: data.results.map(tx => 
+                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
+              )
+            });
+          }
+        });
+      }
+      
+      return { previousData };
+    },
+    onSuccess: () => {
+      // don't do this
+      // queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+    onError: (error, _, context) => {
+      // Roll back to the previous value if there was an error
+      if (context?.previousData) {
+        queryClient.setQueryData(
+          TRANSACTION_KEYS.paginated({}), 
+          context.previousData
+        );
+        
+        // Revert paginated queries too
+        const paginatedQueries = queryClient.getQueriesData({
+          queryKey: ['transactions', 'paginated']
+        });
+        
+        paginatedQueries.forEach(([queryKey]) => {
+          queryClient.invalidateQueries({ queryKey: queryKey as any });
+        });
+      }
+    }
+  });
+}
+
 // Hook for CSV upload with react-query and real-time updates
 export interface CSVUploadOptions {
   onSuccess?: (data: UploadCSVResponse) => void;

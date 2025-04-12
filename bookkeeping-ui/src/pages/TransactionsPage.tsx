@@ -21,7 +21,8 @@ import {
   useTransactions,
   useCSVUpload,
   setLongOperationInProgress,
-  isLongOperationActive
+  isLongOperationActive,
+  useTransactionUpdateMutation
 } from '../api/transactions';
 import { TransactionTable } from '../components/TransactionTable';
 
@@ -243,59 +244,19 @@ export function TransactionsPage() {
     return id;
   };
   
-  // Create transaction update mutation
-  const updateMutation = useMutation({
-    mutationFn: (update: Partial<Transaction> & { id: number }) => {
-      const old = transactions.find(t => t.id === update.id);
-      return updateTransaction({ ...old, ...update});
-    },
-    onMutate: async (updatedTransaction) => {
-
-      // Snapshot the previous value
-      const previousData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
-        TRANSACTION_KEYS.paginated(queryParams)
-      );
-
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
-      
-      // Optimistically update to the new value
-      if (transactions) {
-        queryClient.setQueryData<PaginatedResponse<Transaction>>(
-          TRANSACTION_KEYS.paginated(queryParams),
-          old => {
-            if (!old) return old;
-            return {
-              ...old,
-              results: old.results.map(tx => 
-                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
-              )
-            };
-          }
-        );
-      }
-      
-      return { previousData };
-    },
-    onSuccess: () => {
-      showNotification('success', 'Transaction updated successfully');
-      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.paginated(queryParams) });
-    },
-    onError: (error, _, context) => {
-      // Roll back to the previous value if there was an error
-      if (context?.previousData) {
-        queryClient.setQueryData(
-          TRANSACTION_KEYS.paginated(queryParams), 
-          context.previousData
-        );
-      }
-      showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
-    }
-  });
+  // Use the refactored transaction update mutation from API
+  const updateMutation = useTransactionUpdateMutation();
   
   // Simple wrapper function to expose the mutation
-  const handleUpdateTransaction = async (transaction: Partial<Transaction> & { id: number }) => {
-    return updateMutation.mutateAsync(transaction);
+  const handleUpdateTransaction = (transaction: Partial<Transaction> & { id: number }) => {
+    return updateMutation.mutateAsync(transaction, {
+      onSuccess: () => {
+        showNotification('success', 'Transaction updated successfully');
+      },
+      onError: (error) => {
+        showNotification('error', error instanceof Error ? error.message : 'Failed to update transaction');
+      }
+    });
   };
 
   // Handle pagination

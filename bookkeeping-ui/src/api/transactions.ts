@@ -557,8 +557,9 @@ export function useResolveTransactionFlag() {
 }
 
 // Hook for using React Query to update a transaction with optimistic updates
-export function useTransactionUpdateMutation() {
+export function useTransactionUpdateMutation({ fetchParams }: {fetchParams: FetchTransactionsParams}) {
   const queryClient = useQueryClient();
+  const currentKey = TRANSACTION_KEYS.paginated(fetchParams);
   
   return useMutation({
     mutationFn: (update: Partial<Transaction> & { id: number }) => {
@@ -571,7 +572,7 @@ export function useTransactionUpdateMutation() {
     onMutate: async (updatedTransaction) => {
       // Snapshot the previous value
       const previousData = queryClient.getQueryData<PaginatedResponse<Transaction>>(
-        TRANSACTION_KEYS.paginated({})
+        currentKey
       );
 
       // Cancel any outgoing refetches
@@ -580,7 +581,7 @@ export function useTransactionUpdateMutation() {
       // Optimistically update the cache
       if (previousData) {
         queryClient.setQueryData<PaginatedResponse<Transaction>>(
-          TRANSACTION_KEYS.paginated({}),
+          currentKey,
           old => {
             if (!old) return old;
             return {
@@ -597,16 +598,12 @@ export function useTransactionUpdateMutation() {
           queryKey: ['transactions', 'paginated']
         });
         
-        paginatedQueries.forEach(([queryKey, data]) => {
-          if (data) {
-            queryClient.setQueryData(queryKey, {
-              ...data,
-              results: data.results.map(tx => 
-                tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
-              )
-            });
-          }
-        });
+        queryClient.setQueryData(currentKey, data => ({
+          ...data,
+          results: data.results.map(tx =>
+            tx.id === updatedTransaction.id ? { ...tx, ...updatedTransaction } : tx
+                                   )
+        }));
       }
       
       return { previousData };

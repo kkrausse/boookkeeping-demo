@@ -245,7 +245,7 @@ export function TransactionsPage() {
   };
   
   // Use the refactored transaction update mutation from API
-  const updateMutation = useTransactionUpdateMutation();
+  const updateMutation = useTransactionUpdateMutation({fetchParams: queryParams});
   
   // Simple wrapper function to expose the mutation
   const handleUpdateTransaction = (transaction: Partial<Transaction> & { id: number }) => {

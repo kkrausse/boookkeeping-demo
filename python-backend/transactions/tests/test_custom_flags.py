@@ -87,7 +87,7 @@ class CustomFlagTests(TestCase):
         )
 
     def test_resolve_flag_via_api(self):
-        """Test resolving (deleting) a flag via the API endpoint."""
+        """Test marking a flag as resolved via the API endpoint."""
         url = reverse('transaction-resolve-flag', kwargs={
             'pk': self.transaction.id,
             'flag_id': self.custom_flag.id
@@ -97,11 +97,9 @@ class CustomFlagTests(TestCase):
         response = self.client.post(url, {}, format='json')
         self.assertEqual(response.status_code, 200)
         
-        # The flag should be deleted
-        self.assertEqual(
-            TransactionFlag.objects.filter(id=self.custom_flag.id).count(),
-            0
-        )
+        # The flag should still exist but be marked as resolved
+        flag = TransactionFlag.objects.get(id=self.custom_flag.id)
+        self.assertTrue(flag.is_resolved)
         
         # Check response indicates success
         self.assertEqual(response.data['status'], 'success')

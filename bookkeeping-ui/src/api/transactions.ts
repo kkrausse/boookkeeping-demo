@@ -297,6 +297,7 @@ export interface TransactionFlag {
   message: string;
   duplicates_transaction: number | null;
   is_resolvable: boolean;
+  is_resolved: boolean;
 }
 
 export type TransactionSortColumn = 'description' | 'amount' | 'datetime' | 'created_at' | 'updated_at' | 'flags';

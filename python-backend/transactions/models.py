@@ -34,6 +34,8 @@ class TransactionFlag(models.Model):
     message = models.TextField()
     is_resolvable = models.BooleanField(default=False, 
                     help_text="Whether this flag can be manually resolved by the user")
+    is_resolved = models.BooleanField(default=False,
+                  help_text="Whether this flag has been manually resolved by the user")
 
     class Meta:
         # Make transaction + flag_type + message unique together to prevent exact duplicates
@@ -42,15 +44,17 @@ class TransactionFlag(models.Model):
         indexes = [
             models.Index(fields=['duplicates_transaction']),
             models.Index(fields=['transaction', 'flag_type']),
+            models.Index(fields=['is_resolved']),
         ]
 
 @receiver(pre_save, sender=Transaction)
 def check_duplicates(sender, instance, **kwargs):
-    # delete existing dupes
+    # delete existing unresolved dupes
     if instance.pk:
         TransactionFlag.objects.filter(
             transaction=instance,
-            flag_type='DUPLICATE'
+            flag_type='DUPLICATE',
+            is_resolved=False  # Only delete unresolved flags
         ).delete()
 
 @receiver(post_save, sender=Transaction)
@@ -69,32 +73,55 @@ def create_duplicate_flag(sender, instance, created, **kwargs):
     if duplicates.exists():
         # Create a flag for this transaction pointing to the first duplicate
         first_duplicate = duplicates.first()
+        # Check if there's an existing flag to preserve resolution status
+        existing_flag = TransactionFlag.objects.filter(
+            transaction=instance,
+            flag_type='DUPLICATE'
+        ).first()
+        
+        is_resolved = False
+        if existing_flag:
+            is_resolved = existing_flag.is_resolved
+            
         TransactionFlag.objects.update_or_create(
             transaction=instance,
             flag_type='DUPLICATE',
             defaults={
                 'duplicates_transaction': first_duplicate,
                 'message': f'Possible duplicate of transaction {first_duplicate.id}',
-                'is_resolvable': True
+                'is_resolvable': True,
+                'is_resolved': is_resolved
             }
         )
         
         # Create flags for all duplicates pointing to this transaction
         for duplicate in duplicates:
+            # Check if there's an existing flag to preserve resolution status
+            existing_flag = TransactionFlag.objects.filter(
+                transaction=duplicate,
+                flag_type='DUPLICATE'
+            ).first()
+            
+            is_resolved = False
+            if existing_flag:
+                is_resolved = existing_flag.is_resolved
+                
             TransactionFlag.objects.update_or_create(
                 transaction=duplicate,
                 flag_type='DUPLICATE',
                 defaults={
                     'duplicates_transaction': instance,
                     'message': f'Possible duplicate of transaction {instance.id}',
-                    'is_resolvable': True
+                    'is_resolvable': True,
+                    'is_resolved': is_resolved
                 }
             )
     elif not created:  # If this is an update and no duplicates exist
-        # Clear duplicate flags for other transactions that pointed to this one
+        # Clear unresolved duplicate flags for other transactions that pointed to this one
         TransactionFlag.objects.filter(
             duplicates_transaction=instance,
-            flag_type='DUPLICATE'
+            flag_type='DUPLICATE',
+            is_resolved=False  # Only delete unresolved flags
         ).delete()
         
 class TransactionRule(models.Model):

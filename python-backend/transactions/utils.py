@@ -354,7 +354,10 @@ def create_transaction_flags(transaction, flags):
                 transaction=transaction,
                 flag_type=flag_data['flag_type'],
                 message=flag_data['message'],
-                defaults={'is_resolvable': is_resolvable}
+                defaults={
+                    'is_resolvable': is_resolvable,
+                    'is_resolved': False
+                }
             )
             
             # Only add to created_flags if it was actually created
@@ -447,7 +450,10 @@ def process_custom_flag(custom_flag, transaction, all_flags):
                 transaction=transaction,
                 flag_type=flag_type,
                 message=message,
-                defaults={'is_resolvable': is_resolvable}
+                defaults={
+                    'is_resolvable': is_resolvable,
+                    'is_resolved': False
+                }
             )
             
             # Only add to flags list if it was created
@@ -538,10 +544,11 @@ def apply_transaction_rule(rule_id=None, rule=None, transactions=None):
                     transaction=transaction,
                     flag_type='RULE_MATCH',
                     message=rule.flag_message,
-                    defaults={'is_resolvable': True}
+                    defaults={'is_resolvable': True, 'is_resolved': False}
                 )
                 if created:
                     flag_count += 1
+                # If flag already existed, we preserve its is_resolved status
     
     # Return summary of changes
     return {
@@ -648,11 +655,12 @@ def update_transaction_with_flags(transaction, data):
     # Clean the merged data
     cleaned_data = clean_transaction_data(merged_data)
     
-    # Clear existing parse error, missing data, and rule match flags
-    # Keep custom flags intact
+    # Clear existing unresolved parse error, missing data, and rule match flags
+    # Keep custom flags and resolved flags intact
     TransactionFlag.objects.filter(
         transaction=transaction,
-        flag_type__in=['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH']
+        flag_type__in=['PARSE_ERROR', 'MISSING_DATA', 'RULE_MATCH'],
+        is_resolved=False  # Only delete unresolved flags
     ).delete()
     
     # Update transaction with the cleaned data

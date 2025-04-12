@@ -85,8 +85,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
         queryset = Transaction.objects.all()
         
         # Annotate with flag count for sorting by number of unresolved flags
+        # Only count flags that have not been resolved
         queryset = queryset.annotate(
-            flag_count=models.Count('flags')
+            flag_count=models.Count('flags', filter=models.Q(flags__is_resolved=False))
         )
         
         # Apply default ordering
@@ -103,7 +104,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='resolve-flag/(?P<flag_id>[^/.]+)')
     def resolve_flag(self, request, pk=None, flag_id=None):
         """
-        Resolve (delete) a specific flag for a transaction
+        Mark a specific flag as resolved for a transaction
         """
         transaction = self.get_object()
         
@@ -118,8 +119,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                     'message': 'This flag cannot be manually resolved'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Delete the flag
-            flag.delete()
+            # Mark as resolved instead of deleting
+            flag.is_resolved = True
+            flag.save()
             
             return Response({
                 'status': 'success',

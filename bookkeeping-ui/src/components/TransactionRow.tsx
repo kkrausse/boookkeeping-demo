@@ -28,11 +28,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   // For editing mode, we need to track changes before saving
   const [editValues, setEditValues] = useState<Partial<Transaction>>({});
   
-  // Track which flags are currently being resolved
+  // Track which flags are currently being resolved (for loading indicator)
   const [resolvingFlags, setResolvingFlags] = useState<Set<number>>(new Set());
-  
-  // Track resolved flags in local state (server will delete them, this is for UI only)
-  const [localResolvedFlags, setLocalResolvedFlags] = useState<TransactionFlag[]>([]);
   
   // Reset edit values when transaction changes or when entering edit mode
   useEffect(() => {
@@ -117,7 +114,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   // Use the TanStack Query mutation hook for resolving flags
   const resolveFlagMutation = useResolveTransactionFlag();
   
-  // Handle resolving (deleting) a flag
+  // Handle marking a flag as resolved
   const handleResolveFlag = async (flag: TransactionFlag) => {
     if (!transaction || !transaction.id || !flag?.id) return;
     
@@ -135,14 +132,10 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
       // Call the API to resolve the flag using TanStack Query mutation
       await resolveFlagMutation.mutateAsync({ transactionId, flagId });
       
-      // Store a copy of the resolved flag to show in the UI
-      setLocalResolvedFlags(prev => [...prev, { ...flag, id: undefined }]);
-      
       showNotification('success', 'Flag resolved successfully');
       
-      // We don't need to manually update the transaction anymore
       // The mutation's onSuccess handler will invalidate the queries
-      // and trigger a refetch automatically
+      // and trigger a refetch automatically, which will update the is_resolved field
     } catch (error) {
       showNotification('error', error instanceof Error ? error.message : 'Failed to resolve flag');
     } finally {
@@ -205,27 +198,25 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
 
   const isPending = isUpdating;
   
-  // Reset localResolvedFlags when transaction changes
-  useEffect(() => {
-    if (transaction?.id) {
-      setLocalResolvedFlags([]);
-    }
-  }, [transaction?.id]);
+  // No need to track local resolved flags anymore - they come from the backend
   
   // Split flags into active and resolved for display purposes
-  const { activeFlags, resolvedFlagsCount } = useMemo(() => {
+  const { activeFlags, resolvedFlags } = useMemo(() => {
     if (!transaction || !transaction.flags) {
-      return { activeFlags: [], resolvedFlagsCount: localResolvedFlags.length };
+      return { activeFlags: [], resolvedFlags: [] };
     }
 
     return {
-      activeFlags: transaction.flags,
-      resolvedFlagsCount: localResolvedFlags.length
+      // Filter out resolved flags from active flags
+      activeFlags: transaction.flags.filter(flag => !flag.is_resolved),
+      // Get the resolved flags
+      resolvedFlags: transaction.flags.filter(flag => flag.is_resolved)
     };
-  }, [transaction, localResolvedFlags]);
+  }, [transaction]);
   
   const hasUnresolvedFlags = activeFlags && activeFlags.length > 0;
-  const hasOnlyResolvedFlags = !hasUnresolvedFlags && resolvedFlagsCount > 0;
+  const hasResolvedFlags = resolvedFlags && resolvedFlags.length > 0;
+  const hasOnlyResolvedFlags = !hasUnresolvedFlags && hasResolvedFlags;
 
   return (
     <>
@@ -347,7 +338,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
                       <span className="flag-count">{activeFlags.length}</span>
                     )}
                     {hasOnlyResolvedFlags && (
-                      <span className="flag-count resolved-only">{resolvedFlagsCount}</span>
+                      <span className="flag-count resolved-only">{resolvedFlags.length}</span>
                     )}
                   </button>
                 </>
@@ -427,11 +418,11 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
             )}
             
             {/* Resolved Flags */}
-            {localResolvedFlags.length > 0 && (
+            {resolvedFlags.length > 0 && (
               <div className="resolved-flags-section">
                 <h5>Resolved Flags</h5>
                 <ul className="flags-list">
-                  {localResolvedFlags.map((flag, idx) => (
+                  {resolvedFlags.map((flag, idx) => (
                     <li key={`resolved-${idx}`} className="flag-item resolved">
                       <div className="flag-content">
                         {/* Icon for resolved flags */}

@@ -73,6 +73,6 @@ class TransactionFlagAPITests(TestCase):
         
         self.assertEqual(response.status_code, 200)
         
-        # Verify flag was deleted
-        flag_exists = TransactionFlag.objects.filter(id=self.custom_flag.id).exists()
-        self.assertFalse(flag_exists)
+        # Verify flag was marked as resolved
+        flag = TransactionFlag.objects.get(id=self.custom_flag.id)
+        self.assertTrue(flag.is_resolved)

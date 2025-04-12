@@ -10,6 +10,7 @@ import {
 import { Plus, Filter, Loader2, Tag, Flag, Minus, Check } from 'lucide-react';
 import { TransactionRow } from './TransactionRow';
 import { FilterPanel } from './FilterPanel';
+import { FilterInlinePanel } from './FilterInlinePanel';
 import { ActionMenu } from './ActionMenu';
 import { ActionData } from './ActionInputs';
 import './TransactionTable.css';
@@ -60,7 +61,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
   const queryClient = useQueryClient();
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [showNewTransactionRow, setShowNewTransactionRow] = useState<boolean>(false);
-  const [showFilters, setShowFilters] = useState<boolean>(false);
+  // Removed filter panel state
   
   // Selection state
   const [selectedTransactions, setSelectedTransactions] = useState<Set<number>>(new Set());
@@ -297,17 +298,16 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
       )}
       
       <div className="table-header">
-        <h2>Transactions</h2>
+        <div className="table-filter-container">
+          <FilterInlinePanel
+            filters={filters}
+            onFilterChange={onFilterChange}
+            isFiltersActive={isFiltersActive()}
+            clearFilters={clearFilters}
+            showNotification={showNotification}
+          />
+        </div>
         <div className="table-actions">
-          <button 
-            className={`filter-button ${isFiltersActive() ? 'active' : ''}`}
-            onClick={() => setShowFilters(!showFilters)}
-            title="Filter transactions"
-          >
-            <Filter size={18} />
-            <span>Filter</span>
-            {isFiltersActive() && <span className="filter-badge" />}
-          </button>
           {csvUploadButton}
           <button 
             className="add-button"
@@ -315,21 +315,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ tableProps }
             title={showNewTransactionRow ? "Cancel" : "Add new transaction"}
           >
             <Plus size={18} />
-            <span>Add Transaction</span>
+            <span>Transaction</span>
           </button>
         </div>
       </div>
       
-      {/* Filter Panel */}
-      {showFilters && (
-        <FilterPanel 
-          filters={filters}
-          onFilterChange={onFilterChange}
-          isFiltersActive={isFiltersActive()}
-          clearFilters={clearFilters}
-          showNotification={showNotification}
-        />
-      )}
+      {/* Removed Filter Panel */}
 
       {/* Action Menu for selected transactions */}
       <div className="action-menu-container">

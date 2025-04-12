@@ -197,7 +197,7 @@ export function TransactionsPage() {
     amountValue: '',
     amountComparison: ''
   });
-  const pageSize = 10; // Match the default in the backend
+  const pageSize = 20; // Match the default in the backend
 
   // Create query parameters object
   const queryParams: FetchTransactionsParams = {
@@ -392,7 +392,14 @@ export function TransactionsPage() {
         </div>
       )}
       
-      <div className="transactions-info">Total: {totalCount}</div>
+      <div className="transactions-info">
+        <span>Total: {totalCount}</span>
+        {data?.results && (
+          <span className="flag-count-info">
+            Flags: {data.results.reduce((count, t) => count + (t.flags?.filter(f => !f.is_resolved).length || 0), 0)}
+          </span>
+        )}
+      </div>
       <TransactionTable tableProps={({
         transactions: transactions,
         currentSort: currentSort,

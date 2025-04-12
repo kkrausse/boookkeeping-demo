@@ -210,7 +210,7 @@ export interface PaginatedResponse<T> {
 export interface FilterParams {
   description?: string;
   amountValue?: string;
-  amountComparison?: 'above' | 'below' | 'equal' | '';
+  amountComparison?: '>' | '<' | '=' | '';
 }
 
 export interface FetchTransactionsParams {
@@ -256,13 +256,13 @@ export async function fetchTransactions(params: FetchTransactionsParams = {}): P
       const amountValue = filters.amountValue;
       
       switch (filters.amountComparison) {
-        case 'above':
+        case '>':
           queryParams.append('amount__gt', amountValue);
           break;
-        case 'below':
+        case '<':
           queryParams.append('amount__lt', amountValue);
           break;
-        case 'equal':
+        case '=':
           queryParams.append('amount', amountValue);
           break;
       }

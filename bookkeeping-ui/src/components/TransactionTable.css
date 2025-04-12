@@ -24,24 +24,51 @@
   padding: 12px 16px;
   background-color: #f8f9fa;
   border-bottom: 1px solid #eaeaea;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.table-header h2 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #333;
+.table-filter-container {
+  flex: 1;
+  min-width: 350px;
+  overflow: hidden;
+}
+
+@media screen and (max-width: 1024px) and (min-width: 769px) {
+  .table-filter-container {
+    flex: 0 1 auto;
+    min-width: 300px;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .table-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .table-filter-container {
+    width: 100%;
+    margin-bottom: 12px;
+    min-width: 0;
+  }
+  
+  .table-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .table-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .add-button {
   background-color: #4a90e2;
   color: white;
-  padding: 8px 16px;
+  padding: 4px 10px;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -50,7 +77,6 @@
   font-weight: 500;
   border: none;
   cursor: pointer;
-  min-width: 150px;
   transition: background-color 0.2s;
 }
 
@@ -67,7 +93,7 @@
   align-items: center;
   gap: 6px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   border: 1px solid #e0e0e0;
   cursor: pointer;
   transition: all 0.2s;
@@ -89,16 +115,15 @@
 .csv-upload-button {
   background-color: #5a6268;
   color: white;
-  padding: 8px 16px;
+  padding: 8px 10px;
   border-radius: 4px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   border: none;
   cursor: pointer;
-  min-width: 120px;
   transition: background-color 0.2s;
 }
 

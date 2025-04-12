@@ -21,9 +21,9 @@ function App() {
     setActivePage(page);
   };
 
+  // <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
   return (
     <QueryClientProvider client={queryClient}>
-      <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
       <div className="app-container">
         <Navbar activePage={activePage} onPageChange={handlePageChange} />
         <div className="page-content">

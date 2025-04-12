@@ -599,6 +599,11 @@
   transition: background-color 0.2s, color 0.2s;
 }
 
+.edit-column {
+  width: 120px;
+  text-align: center !important;
+  position: relative;
+}
 .actions-column {
   width: 120px;
   text-align: center !important;

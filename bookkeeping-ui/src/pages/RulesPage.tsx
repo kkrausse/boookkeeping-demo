@@ -322,7 +322,7 @@ export function RulesPage() {
               <th>Conditions</th>
               <th>Actions</th>
               <th>Created</th>
-              <th className="actions-column">Actions</th>
+              <th className="edit-column">Edit</th>
             </tr>
           </thead>
           <tbody>
@@ -380,14 +380,6 @@ export function RulesPage() {
                             title="Edit rule"
                           >
                             <Edit size={18} />
-                          </button>
-                          <button
-                            className="icon-button apply-button"
-                            onClick={() => rule.id && handleApplyRule(rule.id)}
-                            disabled={applyRuleMutation.isPending}
-                            title="Apply rule to all transactions"
-                          >
-                            <Play size={18} />
                           </button>
                           <button
                             className="icon-button delete-button"

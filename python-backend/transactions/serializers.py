@@ -25,9 +25,7 @@ class TransactionRuleSerializer(serializers.ModelSerializer):
         model = TransactionRule
         fields = [
             'id', 
-            'filter_description', 
-            'filter_amount_value', 
-            'filter_amount_comparison',
+            'filter_condition',
             'category',
             'flag_message',
             'created_at',
@@ -40,21 +38,26 @@ class TransactionRuleSerializer(serializers.ModelSerializer):
         Validate that the rule has at least one filter criterion and one action.
         """
         # Check if at least one filter criterion is provided
-        has_filter = bool(data.get('filter_description')) or (
-            bool(data.get('filter_amount_value')) and bool(data.get('filter_amount_comparison'))
-        )
+        has_filter = bool(data.get('filter_condition'))
         
         # Check if at least one action is provided
         has_action = bool(data.get('category')) or bool(data.get('flag_message'))
         
         if not has_filter:
-            raise serializers.ValidationError("At least one filter criterion must be provided")
+            raise serializers.ValidationError("At least one filter condition must be provided")
         
         if not has_action:
             raise serializers.ValidationError("At least one action (category or flag_message) must be provided")
             
-        # If amount comparison is provided but not value, or vice versa
-        if bool(data.get('filter_amount_comparison')) != bool(data.get('filter_amount_value')):
-            raise serializers.ValidationError("Both amount comparison and value must be provided together")
+        # Validate filter_condition is a valid dict
+        filter_condition = data.get('filter_condition')
+        if filter_condition and not isinstance(filter_condition, dict):
+            raise serializers.ValidationError("filter_condition must be a JSON object")
+            
+        # Check if the filter condition has valid Django filter syntax
+        if filter_condition:
+            for key in filter_condition.keys():
+                if not any(key.endswith(suffix) for suffix in ['', '__gt', '__lt', '__gte', '__lte', '__exact', '__icontains', '__contains']):
+                    raise serializers.ValidationError(f"Invalid filter condition key: {key}")
             
         return data

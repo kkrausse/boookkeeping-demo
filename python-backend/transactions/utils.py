@@ -280,27 +280,77 @@ def apply_transaction_rules(transaction_data, use_cache=True):
     for rule in rules:
         rule_matches = True
         
-        # Check description filter
-        if rule.filter_description and transaction_data.get('description'):
-            if rule.filter_description.lower() not in transaction_data['description'].lower():
+        # Skip rules with no filter condition
+        if not rule.filter_condition:
+            continue
+            
+        # Check each filter condition
+        for key, value in rule.filter_condition.items():
+            # Parse field and operator from Django-style filter key
+            parts = key.split('__')
+            field = parts[0]
+            operator = parts[1] if len(parts) > 1 else 'exact'
+            
+            # Get the field value from transaction data
+            field_value = transaction_data.get(field)
+            
+            # Skip if field isn't in transaction data
+            if field_value is None:
                 rule_matches = False
+                break
                 
-        # Check amount filter
-        if rule.filter_amount_value is not None and rule.filter_amount_comparison and transaction_data.get('amount') is not None:
-            amount = transaction_data['amount']
-            if isinstance(amount, str):
+            # Convert amount to Decimal for comparison if needed
+            if field == 'amount' and isinstance(field_value, str):
                 try:
-                    amount = Decimal(amount)
+                    field_value = Decimal(field_value)
                 except (InvalidOperation, ValueError):
                     rule_matches = False
+                    break
             
-            if rule_matches:
-                if rule.filter_amount_comparison == 'above' and not (amount > rule.filter_amount_value):
+            # Apply appropriate comparison operator
+            if operator == 'icontains':
+                # Case-insensitive contains
+                if not (isinstance(field_value, str) and 
+                       isinstance(value, str) and 
+                       value.lower() in field_value.lower()):
                     rule_matches = False
-                elif rule.filter_amount_comparison == 'below' and not (amount < rule.filter_amount_value):
+                    break
+            elif operator == 'contains':
+                # Case-sensitive contains
+                if not (isinstance(field_value, str) and 
+                       isinstance(value, str) and 
+                       value in field_value):
                     rule_matches = False
-                elif rule.filter_amount_comparison == 'equal' and not (amount == rule.filter_amount_value):
+                    break
+            elif operator == 'gt':
+                # Greater than
+                if not (field_value > value):
                     rule_matches = False
+                    break
+            elif operator == 'lt':
+                # Less than
+                if not (field_value < value):
+                    rule_matches = False
+                    break
+            elif operator == 'gte':
+                # Greater than or equal
+                if not (field_value >= value):
+                    rule_matches = False
+                    break
+            elif operator == 'lte':
+                # Less than or equal
+                if not (field_value <= value):
+                    rule_matches = False
+                    break
+            elif operator == 'exact' or operator == '':
+                # Exact match
+                if not (field_value == value):
+                    rule_matches = False
+                    break
+            else:
+                # Unsupported operator
+                rule_matches = False
+                break
         
         # Apply rule actions if all conditions match
         if rule_matches:
@@ -460,6 +510,87 @@ def process_custom_flag(custom_flag, transaction, all_flags):
             'is_resolvable': is_resolvable,
             'created': True
         })
+
+# Add the new apply_transaction_rule function
+def apply_transaction_rule(rule_id, transactions=None):
+    """
+    Apply a TransactionRule to a single transaction or a queryset of transactions.
+    
+    Args:
+        rule_id (int): ID of the TransactionRule to apply.
+        transactions (Transaction, QuerySet, or None): Single transaction, queryset, or None (process all).
+    
+    Returns:
+        dict: Summary of applied changes (e.g., number of transactions updated).
+    """
+    from django.core.exceptions import ValidationError
+    from .models import TransactionRule, Transaction, TransactionFlag
+    
+    try:
+        # Fetch the rule
+        rule = TransactionRule.objects.get(id=rule_id)
+    except TransactionRule.DoesNotExist:
+        raise ValidationError(f"TransactionRule with ID {rule_id} does not exist.")
+
+    # Prepare the transactions queryset
+    if transactions is None:
+        queryset = Transaction.objects.all()
+    elif isinstance(transactions, Transaction):
+        queryset = Transaction.objects.filter(id=transactions.id)
+    else:
+        queryset = transactions
+
+    # Apply filter condition
+    try:
+        if rule.filter_condition:
+            filtered_queryset = queryset.filter(**rule.filter_condition)
+        else:
+            filtered_queryset = queryset.all()
+    except Exception as e:
+        raise ValidationError(f"Invalid filter condition: {str(e)}")
+    
+    # Track changes
+    update_count = 0
+    flag_count = 0
+    
+    # Process in batches for better performance
+    batch_size = 1000
+    for i in range(0, filtered_queryset.count(), batch_size):
+        batch = filtered_queryset[i:i+batch_size]
+        
+        # Process rule actions
+        for transaction in batch:
+            modified = False
+            
+            # Apply category if rule has one and transaction doesn't
+            if rule.category and not transaction.category:
+                transaction.category = rule.category
+                modified = True
+            
+            # Save if modified
+            if modified:
+                transaction.save()
+                update_count += 1
+            
+            # Add flag if rule has one
+            if rule.flag_message:
+                # Check if this flag already exists to avoid duplicates
+                flag, created = TransactionFlag.objects.get_or_create(
+                    transaction=transaction,
+                    flag_type='RULE_MATCH',
+                    message=rule.flag_message,
+                    defaults={'is_resolvable': True}
+                )
+                if created:
+                    flag_count += 1
+    
+    # Return summary of changes
+    return {
+        'rule_id': rule_id,
+        'updated_count': update_count,
+        'flag_count': flag_count,
+        'processed_count': filtered_queryset.count()
+    }
 
 def validate_transaction_data(data):
     """

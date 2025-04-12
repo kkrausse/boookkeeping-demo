@@ -52,8 +52,7 @@ class TransactionFlagTests(TestCase):
         
         # Create a rule for high amount transactions
         self.high_amount_rule = TransactionRule.objects.create(
-            filter_amount_value=Decimal('1000.00'),
-            filter_amount_comparison='above',
+            filter_condition={'amount__gt': 1000.00},
             flag_message='High value transaction (>$1,000)',
         )
         

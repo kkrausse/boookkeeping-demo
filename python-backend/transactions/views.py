@@ -284,40 +284,29 @@ class TransactionRuleViewSet(viewsets.ModelViewSet):
     @api_timer
     @action(detail=True, methods=['post'])
     def apply_to_all(self, request, pk=None):
-        """Apply this rule to all existing transactions."""
-        rule = self.get_object()
-
-        # Get all transactions
-        transactions = Transaction.objects.all()
-        total_count = transactions.count()
+        """Apply a rule to all existing transactions using optimized function."""
+        try:
+            rule = self.get_object()
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
         
-        # Count of transactions updated
-        updated_count = 0
-        start_time = time.time()
+        # Use the optimized apply_transaction_rule function
+        from transactions.utils import apply_transaction_rule
         
-        # Process each transaction
-        for i, transaction in enumerate(transactions):
-            # Use our existing utility function to make sure we're applying
-            # rules consistently and updating flags properly
-            data = {
-                'description': transaction.description,
-                'category': transaction.category,
-                'amount': transaction.amount,
-                'datetime': transaction.datetime
-            }
+        try:
+            start_time = time.time()
+            result = apply_transaction_rule(rule.id)
+            total_time = time.time() - start_time
             
-            # Update the transaction using our utility which handles rules and flags
-            updated_tx, _ = update_transaction_with_flags(transaction, data)
-            updated_count += 1
-
-        total_time = time.time() - start_time
-        logger.info(f"Rule {rule.id} applied to all transactions: {updated_count} updated in {total_time:.3f}s")
-        
-        return Response({
-            'rule_id': rule.id,
-            'updated_count': updated_count,
-            'time_taken': f"{total_time:.3f}s"
-        })
+            # Add time taken to the result
+            result['time_taken'] = f"{total_time:.3f}s"
+            
+            logger.info(f"Rule {rule.id} applied to all transactions: {result['updated_count']} updated in {total_time:.3f}s")
+            return Response(result)
+            
+        except Exception as e:
+            logger.error(f"Error applying rule {rule.id} to all transactions: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
     @api_timer
     @action(detail=False, methods=['post'])

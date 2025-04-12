@@ -370,15 +370,16 @@ export function useCreateTransactionRule(options: { pollingInterval?: number } =
     pollingInterval
   );
   
-  return useMutation<TransactionRule, Error, CreateRuleParams>({
+  return useMutation<{createdRule: TransactionRule, ruleAppliedResponse: RuleApplyResponse}, Error, CreateRuleParams>({
     mutationFn: async (params: CreateRuleParams) => {
       // First create the rule
       const response = await api.post('/rules/', params.rule);
-      const createdRule = response.data;
+      const transactionRule = response.data;
+      console.log('created', transactionRule);
       // just always apply to all
-      await api.post(`/rules/${createdRule.id}/apply_to_all/`);
-
-      return createdRule;
+      const ruleAppliedResponse = await applyRuleToAll(transactionRule.id);
+      console.log('applied', ruleAppliedResponse)
+      return {createdRule: transactionRule, ruleAppliedResponse};
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ['rules']});
@@ -424,41 +425,6 @@ export interface RuleApplyResponse {
   updated_count: number;
 }
 
-// Hook for applying a rule to all transactions with real-time updates
-export function useApplyRuleToAll(options: { pollingInterval?: number } = {}) {
-  const queryClient = useQueryClient();
-  const { pollingInterval = 1000 } = options;
-  
-  // Use our generic polling hook
-  const [startPolling, stopPolling] = usePollingEffect(
-    () => queryClient.invalidateQueries({queryKey: ['transactions']}),
-    pollingInterval
-  );
-  
-  return useMutation<RuleApplyResponse, Error, number>({
-    mutationFn: async (ruleId: number) => {
-      try {
-        const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
-        return response.data;
-      } catch (error) {
-        if (axios.isAxiosError(error) && error.response) {
-          return error.response.data;
-        }
-        throw error;
-      }
-    },
-    onMutate: () => {
-      startPolling();
-      setLongOperationInProgress(true);
-    },
-    onSettled: () => {
-      stopPolling();
-      setLongOperationInProgress(false);
-      queryClient.invalidateQueries({queryKey: ['transactions']});
-    }
-  });
-}
-
 // Hook for applying all rules with real-time updates
 export function useApplyAllRules(options: { pollingInterval?: number } = {}) {
   const queryClient = useQueryClient();
@@ -496,13 +462,8 @@ export function useApplyAllRules(options: { pollingInterval?: number } = {}) {
 
 // Original functions kept for backward compatibility
 export async function applyRuleToAll(ruleId: number): Promise<RuleApplyResponse> {
-  try {
-    setLongOperationInProgress(true);
-    const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
-    return response.data;
-  } finally {
-    setLongOperationInProgress(false);
-  }
+  const response = await api.post(`/rules/${ruleId}/apply_to_all/`);
+  return response.data;
 }
 
 export async function applyAllRules(): Promise<RuleApplyResponse> {

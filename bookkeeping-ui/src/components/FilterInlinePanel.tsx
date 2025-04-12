@@ -230,8 +230,8 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
       onSettled: () => {
         onSubmit();
       },
-      onSuccess: () => {
-        showNotification('success', 'Rule created and applied to all transactions');
+      onSuccess: ({ruleAppliedResponse}) => {
+        showNotification('success', `Rule created. Updated ${ruleAppliedResponse.updated_count} transactions.`);
         setShowRulePanel(false);
         setCategory('');
         setFlagMessage('');

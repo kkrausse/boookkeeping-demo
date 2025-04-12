@@ -592,26 +592,6 @@ def apply_transaction_rule(rule_id, transactions=None):
         'processed_count': filtered_queryset.count()
     }
 
-def validate_transaction_data(data):
-    """
-    Validate transaction data and generate appropriate flags.
-    This function is kept for backward compatibility.
-    
-    Args:
-        data: Dictionary containing transaction data
-        
-    Returns:
-        tuple: (cleaned_data, list of flag dictionaries)
-    """
-    cleaned_data = clean_transaction_data(data)
-    flags = transaction_validation_flags(cleaned_data, data)
-    
-    # Validate that we have at least some valid data
-    if cleaned_data['amount'] is None and not cleaned_data['description'] and not cleaned_data['category']:
-        raise ValueError("Transaction must have at least a description, category, or valid amount")
-    
-    return cleaned_data, flags
-
 def create_transaction_with_flags(data):
     """
     Create a transaction from data, apply rules, and handle flags.

@@ -312,15 +312,42 @@ export interface QueryRule {
   quantity_compare?: '<' | '>' | '=',
 }
 
+export interface FilterCondition {
+  // String filters
+  description__icontains?: string;
+  description__contains?: string;
+  description?: string;
+  
+  // Amount filters
+  amount__gt?: number;
+  amount__lt?: number;
+  amount__gte?: number;
+  amount__lte?: number;
+  amount?: number;
+  
+  // Category filters
+  category__icontains?: string;
+  category__contains?: string;
+  category?: string;
+  
+  // Date filters
+  datetime__gt?: string;
+  datetime__lt?: string;
+  datetime?: string;
+}
+
 export interface TransactionRule {
   id?: number;
-  filter_description?: string;
-  filter_amount_value?: string;
-  filter_amount_comparison?: 'above' | 'below' | 'equal' | '';
+  filter_condition?: FilterCondition;
   category?: string;
   flag_message?: string;
   created_at?: string;
   updated_at?: string;
+  
+  // Legacy fields - to be removed
+  filter_description?: string;
+  filter_amount_value?: string;
+  filter_amount_comparison?: 'above' | 'below' | 'equal' | '';
 }
 
 export interface CreateRuleParams {
@@ -585,8 +612,7 @@ export function useTransactionUpdateMutation() {
       return { previousData };
     },
     onSuccess: () => {
-      // don't do this
-      // queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
     onError: (error, _, context) => {
       // Roll back to the previous value if there was an error
@@ -703,7 +729,5 @@ export function useTransactions(params: FetchTransactionsParams = {}) {
     queryKey: TRANSACTION_KEYS.paginated(params),
     queryFn: () => fetchTransactions(params).then(r => r.data),
     placeholderData: keepPreviousData,
-    // Set a faster polling rate when long operations are in progress
-    refetchInterval: isLongOperationInProgress ? 1000 : false
   });
 }

@@ -45,6 +45,37 @@ const RuleActionSummary = ({ rule }: { rule: TransactionRule }) => {
 const RuleConditionSummary = ({ rule }: { rule: TransactionRule }) => {
   const conditions = [];
   
+  if (rule.filter_condition) {
+    Object.entries(rule.filter_condition).forEach(([key, value]) => {
+      // Parse the Django-style filter syntax
+      if (key.endsWith('__icontains')) {
+        const field = key.replace('__icontains', '');
+        conditions.push(`${field} contains "${value}"`);
+      } else if (key.endsWith('__contains')) {
+        const field = key.replace('__contains', '');
+        conditions.push(`${field} contains "${value}" (case sensitive)`);
+      } else if (key.endsWith('__gt')) {
+        const field = key.replace('__gt', '');
+        conditions.push(`${field} > ${value}`);
+      } else if (key.endsWith('__lt')) {
+        const field = key.replace('__lt', '');
+        conditions.push(`${field} < ${value}`);
+      } else if (key.endsWith('__gte')) {
+        const field = key.replace('__gte', '');
+        conditions.push(`${field} >= ${value}`);
+      } else if (key.endsWith('__lte')) {
+        const field = key.replace('__lte', '');
+        conditions.push(`${field} <= ${value}`);
+      } else if (key.endsWith('__exact')) {
+        const field = key.replace('__exact', '');
+        conditions.push(`${field} = ${value}`);
+      } else {
+        conditions.push(`${key} = ${value}`);
+      }
+    });
+  }
+  
+  // Legacy support
   if (rule.filter_description) {
     conditions.push(`Description contains "${rule.filter_description}"`);
   }
@@ -76,9 +107,7 @@ export function RulesPage() {
   
   // New rule form state
   const [newRule, setNewRule] = useState<Partial<TransactionRule>>({
-    filter_description: '',
-    filter_amount_value: '',
-    filter_amount_comparison: '',
+    filter_condition: {},
     category: '',
     flag_message: ''
   });
@@ -158,9 +187,7 @@ export function RulesPage() {
   
   const resetForm = () => {
     setNewRule({
-      filter_description: '',
-      filter_amount_value: '',
-      filter_amount_comparison: '',
+      filter_condition: {},
       category: '',
       flag_message: ''
     });
@@ -188,13 +215,64 @@ export function RulesPage() {
       });
     }
   };
+
+  // New function to handle filter condition changes
+  const handleFilterConditionChange = (filterType: string, value: any) => {
+    const rule = editingRule || newRule;
+    const updatedCondition = { ...rule.filter_condition } || {};
+    
+    if (filterType === 'description' && value) {
+      updatedCondition['description__icontains'] = value;
+    } else if (filterType === 'description' && !value) {
+      delete updatedCondition['description__icontains'];
+    } else if (filterType === 'amount' && value.comparison && value.value) {
+      // Map UI comparison to Django filter syntax
+      const fieldMap = {
+        'above': 'amount__gt',
+        'below': 'amount__lt',
+        'equal': 'amount'
+      };
+      
+      const field = fieldMap[value.comparison as keyof typeof fieldMap] || '';
+      if (field) {
+        // Remove any existing amount filters
+        Object.keys(updatedCondition).forEach(key => {
+          if (key.startsWith('amount')) {
+            delete updatedCondition[key];
+          }
+        });
+        
+        // Add the new filter
+        updatedCondition[field] = parseFloat(value.value);
+      }
+    } else if (filterType === 'amount' && (!value.comparison || !value.value)) {
+      // Remove any existing amount filters if either comparison or value is missing
+      Object.keys(updatedCondition).forEach(key => {
+        if (key.startsWith('amount')) {
+          delete updatedCondition[key];
+        }
+      });
+    }
+    
+    if (editingRule) {
+      setEditingRule({
+        ...editingRule,
+        filter_condition: updatedCondition
+      });
+    } else {
+      setNewRule({
+        ...newRule,
+        filter_condition: updatedCondition
+      });
+    }
+  };
   
   const handleSaveRule = () => {
     const ruleData = editingRule || newRule;
     
     // Validate the rule
-    const hasCondition = !!ruleData.filter_description || 
-      !!(ruleData.filter_amount_value && ruleData.filter_amount_comparison);
+    const hasCondition = ruleData.filter_condition && 
+      Object.keys(ruleData.filter_condition).length > 0;
       
     const hasAction = !!ruleData.category || !!ruleData.flag_message;
     
@@ -287,8 +365,9 @@ export function RulesPage() {
                   Description Contains:
                   <input 
                     type="text"
-                    value={editingRule?.filter_description || newRule.filter_description || ''}
-                    onChange={(e) => handleFormChange('filter_description', e.target.value)}
+                    value={(editingRule?.filter_condition?.['description__icontains'] || 
+                           newRule.filter_condition?.['description__icontains'] || '')}
+                    onChange={(e) => handleFilterConditionChange('description', e.target.value)}
                     placeholder="Enter text to match in description"
                   />
                 </label>
@@ -299,8 +378,26 @@ export function RulesPage() {
                   Amount:
                   <div className="amount-input-group">
                     <select 
-                      value={editingRule?.filter_amount_comparison || newRule.filter_amount_comparison || ''}
-                      onChange={(e) => handleFormChange('filter_amount_comparison', e.target.value)}
+                      value={
+                        // Determine the comparison type from the filter_condition
+                        Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__gt') ? 'above' :
+                        Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__lt') ? 'below' :
+                        Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount') ? 'equal' : ''
+                      }
+                      onChange={(e) => {
+                        const amountValue = 
+                          (editingRule?.filter_condition?.['amount__gt'] || 
+                          editingRule?.filter_condition?.['amount__lt'] || 
+                          editingRule?.filter_condition?.['amount'] ||
+                          newRule.filter_condition?.['amount__gt'] || 
+                          newRule.filter_condition?.['amount__lt'] || 
+                          newRule.filter_condition?.['amount'] || '');
+                        
+                        handleFilterConditionChange('amount', {
+                          comparison: e.target.value,
+                          value: amountValue
+                        });
+                      }}
                     >
                       <option value="">Select comparison...</option>
                       <option value="above">Above</option>
@@ -309,10 +406,29 @@ export function RulesPage() {
                     </select>
                     <input 
                       type="number"
-                      value={editingRule?.filter_amount_value || newRule.filter_amount_value || ''}
-                      onChange={(e) => handleFormChange('filter_amount_value', e.target.value)}
+                      value={
+                        // Get the amount value from the appropriate filter condition
+                        (editingRule?.filter_condition?.['amount__gt'] || 
+                         editingRule?.filter_condition?.['amount__lt'] || 
+                         editingRule?.filter_condition?.['amount'] ||
+                         newRule.filter_condition?.['amount__gt'] || 
+                         newRule.filter_condition?.['amount__lt'] || 
+                         newRule.filter_condition?.['amount'] || '')
+                      }
+                      onChange={(e) => {
+                        const comparison = 
+                          Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__gt') ? 'above' :
+                          Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount__lt') ? 'below' :
+                          Object.keys(editingRule?.filter_condition || newRule.filter_condition || {}).some(k => k === 'amount') ? 'equal' : '';
+                          
+                        handleFilterConditionChange('amount', {
+                          comparison,
+                          value: e.target.value
+                        });
+                      }}
                       placeholder="Enter amount"
-                      disabled={!(editingRule?.filter_amount_comparison || newRule.filter_amount_comparison)}
+                      disabled={!Object.keys(editingRule?.filter_condition || newRule.filter_condition || {})
+                        .some(k => ['amount__gt', 'amount__lt', 'amount'].includes(k))}
                     />
                   </div>
                 </label>

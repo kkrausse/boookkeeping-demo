@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { FilterParams, TransactionRule, createTransactionRule, CreateRuleParams } from '../api/transactions';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { 
+  FilterParams, 
+  TransactionRule, 
+  FilterCondition,
+  useCreateTransactionRule, 
+  CreateRuleParams 
+} from '../api/transactions';
+import { useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Check, Save, Loader2 } from 'lucide-react';
 import { ActionInputs, ActionData } from './ActionInputs';
 import './FilterPanel.css';
@@ -84,44 +90,45 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     setActionData(newActionData);
   };
 
-  // Create rule mutation
-  const createRuleMutation = useMutation({
-    mutationFn: createTransactionRule,
-    onSuccess: (data) => {
-      // Customize message based on whether we applied to all
-      const successMessage = applyToAll 
-        ? 'Rule created and applied to all transactions' 
-        : 'Rule created successfully';
-        
-      showNotification('success', successMessage);
-      
-      // Reset rule creation state
-      setIsAddingRule(false);
-      setActionData({});
-      setApplyToAll(false);
-      
-      // Invalidate rules and transactions queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ['rules'] });
-      
-      // If we applied the rule to all transactions, also invalidate transactions
-      if (applyToAll) {
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      }
-    },
-    onError: (error) => {
-      // Show error notification
-      showNotification('error', error instanceof Error ? error.message : 'Failed to create rule');
-    }
+  // Create rule mutation using the new hook
+  const createRuleMutation = useCreateTransactionRule({
+    pollingInterval: 1000, // 1 second polling interval for real-time updates
   });
 
   // Submit the rule creation
   const handleCreateRule = () => {
+    // Create filter condition object using new format
+    const filterCondition: FilterCondition = {};
+    
+    // Add description filter if provided
+    if (localFilters.description) {
+      filterCondition.description__icontains = localFilters.description;
+    }
+    
+    // Add amount filter if both comparison and value are provided
+    if (localFilters.amountValue && localFilters.amountComparison) {
+      const amountValue = parseFloat(localFilters.amountValue);
+      
+      if (!isNaN(amountValue)) {
+        // Map the comparison type to the appropriate filter key
+        switch (localFilters.amountComparison) {
+          case 'above':
+            filterCondition.amount__gt = amountValue;
+            break;
+          case 'below':
+            filterCondition.amount__lt = amountValue;
+            break;
+          case 'equal':
+            filterCondition.amount = amountValue;
+            break;
+        }
+      }
+    }
+    
     // Collect rule data
     const ruleData: TransactionRule = {
-      // Apply the filter criteria from the local filters
-      filter_description: localFilters.description || undefined,
-      filter_amount_value: localFilters.amountValue || undefined,
-      filter_amount_comparison: localFilters.amountComparison || undefined,
+      // Use the new filter_condition field
+      filter_condition: filterCondition,
       // Add rule actions from actionData
       category: actionData.category,
       flag_message: actionData.flagMessage
@@ -134,8 +141,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     }
     
     // Check if we have at least one filter criterion
-    if (!ruleData.filter_description && 
-        !(ruleData.filter_amount_value && ruleData.filter_amount_comparison)) {
+    if (Object.keys(filterCondition).length === 0) {
       showNotification('error', 'Please provide at least one filter criterion');
       return;
     }
@@ -144,6 +150,24 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     createRuleMutation.mutate({
       rule: ruleData,
       applyToAll: applyToAll
+    }, {
+      onSuccess: (data) => {
+        // Customize message based on whether we applied to all
+        const successMessage = applyToAll 
+          ? 'Rule created and applied to all transactions' 
+          : 'Rule created successfully';
+          
+        showNotification('success', successMessage);
+        
+        // Reset rule creation state
+        setIsAddingRule(false);
+        setActionData({});
+        setApplyToAll(false);
+      },
+      onError: (error) => {
+        // Show error notification
+        showNotification('error', error instanceof Error ? error.message : 'Failed to create rule');
+      }
     });
   };
 

@@ -14,7 +14,7 @@ class Transaction(models.Model):
         indexes = [
             models.Index(fields=['category']),
             models.Index(fields=['created_at']),
-            models.Index(fields=['amount', 'description']),
+            models.Index(fields=['amount', 'description', 'datetime']),
         ]
 
 class TransactionFlag(models.Model):

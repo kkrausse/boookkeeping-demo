@@ -6,11 +6,13 @@ from transactions.utils import check_duplicates_bulk, create_transactions_with_f
 
 class TestDuplicateFlags(TestCase):
     def setUp(self):
+        # Create a fixed datetime to ensure duplicate detection works consistently
+        self.test_datetime = timezone.now()
         self.transaction_data = {
             'description': 'Test Transaction',
             'category': 'Test Category',
             'amount': Decimal('100.00'),
-            'datetime': timezone.now(),
+            'datetime': self.test_datetime,
         }
     
     def test_duplicate_flags_are_created_for_both_transactions(self):
@@ -19,7 +21,9 @@ class TestDuplicateFlags(TestCase):
         tx1 = Transaction.objects.create(**self.transaction_data)
         
         # Create second transaction with same data
-        tx2 = Transaction.objects.create(**self.transaction_data)
+        # Make a copy to ensure it's the same exact data including datetime
+        tx2_data = self.transaction_data.copy()
+        tx2 = Transaction.objects.create(**tx2_data)
         
         # With our new implementation, we need to explicitly check for duplicates
         # since we're not using signals anymore
@@ -84,14 +88,18 @@ class TestDuplicateFlags(TestCase):
     
     def test_bulk_duplicate_detection(self):
         """Test the optimized bulk duplicate detection with multiple transactions"""
-        # Create a batch of transactions with duplicates
+        # Create a batch of transactions with duplicates - now including datetime
+        time1 = timezone.now()
+        time2 = timezone.now() - timezone.timedelta(hours=1)
+        time3 = timezone.now() - timezone.timedelta(hours=2)
+        
         batch_data = [
-            {'description': 'Duplicate Item', 'amount': Decimal('50.00'), 'category': 'Test'},
-            {'description': 'Duplicate Item', 'amount': Decimal('50.00'), 'category': 'Test'},
-            {'description': 'Unique Item', 'amount': Decimal('75.00'), 'category': 'Test'},
-            {'description': 'Another Duplicate', 'amount': Decimal('100.00'), 'category': 'Test'},
-            {'description': 'Another Duplicate', 'amount': Decimal('100.00'), 'category': 'Test'},
-            {'description': 'Another Duplicate', 'amount': Decimal('100.00'), 'category': 'Test'}
+            {'description': 'Duplicate Item', 'amount': Decimal('50.00'), 'category': 'Test', 'datetime': time1},
+            {'description': 'Duplicate Item', 'amount': Decimal('50.00'), 'category': 'Test', 'datetime': time1},
+            {'description': 'Unique Item', 'amount': Decimal('75.00'), 'category': 'Test', 'datetime': time2},
+            {'description': 'Another Duplicate', 'amount': Decimal('100.00'), 'category': 'Test', 'datetime': time3},
+            {'description': 'Another Duplicate', 'amount': Decimal('100.00'), 'category': 'Test', 'datetime': time3},
+            {'description': 'Another Duplicate', 'amount': Decimal('100.00'), 'category': 'Test', 'datetime': time3}
         ]
         
         # Create transactions
@@ -149,14 +157,15 @@ class TestDuplicateFlags(TestCase):
     
     def test_csv_upload_duplicate_detection(self):
         """Test that duplicate detection works correctly during CSV upload"""
-        # Create test data with duplicates
+        # Create test data with duplicates - making sure datetime matches for duplicates
+        # but is different for unique transactions
         csv_data = [
-            {'description': 'CSV Duplicate', 'amount': '150.00', 'category': 'Test', 'datetime': '2023-01-01'},
-            {'description': 'CSV Duplicate', 'amount': '150.00', 'category': 'Test', 'datetime': '2023-01-01'},
-            {'description': 'CSV Unique', 'amount': '200.00', 'category': 'Test', 'datetime': '2023-01-02'},
-            {'description': 'CSV Triplicate', 'amount': '300.00', 'category': 'Test', 'datetime': '2023-01-03'},
-            {'description': 'CSV Triplicate', 'amount': '300.00', 'category': 'Test', 'datetime': '2023-01-03'},
-            {'description': 'CSV Triplicate', 'amount': '300.00', 'category': 'Test', 'datetime': '2023-01-03'}
+            {'description': 'CSV Duplicate', 'amount': '150.00', 'category': 'Test', 'datetime': '2023-01-01T10:30:00'},
+            {'description': 'CSV Duplicate', 'amount': '150.00', 'category': 'Test', 'datetime': '2023-01-01T10:30:00'},
+            {'description': 'CSV Unique', 'amount': '200.00', 'category': 'Test', 'datetime': '2023-01-02T12:45:00'},
+            {'description': 'CSV Triplicate', 'amount': '300.00', 'category': 'Test', 'datetime': '2023-01-03T09:15:00'},
+            {'description': 'CSV Triplicate', 'amount': '300.00', 'category': 'Test', 'datetime': '2023-01-03T09:15:00'},
+            {'description': 'CSV Triplicate', 'amount': '300.00', 'category': 'Test', 'datetime': '2023-01-03T09:15:00'}
         ]
         
         # Process using bulk creation

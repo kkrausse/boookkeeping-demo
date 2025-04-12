@@ -41,17 +41,22 @@ class TransactionFlagTests(TestCase):
             category=""  # Missing category
         )
         
+        # Set a fixed datetime for duplicate transactions
+        self.duplicate_datetime = timezone.now()
+        
         self.duplicate_transaction = Transaction.objects.create(
             description="Duplicate Transaction",
             amount=Decimal('99.99'),
-            category="Duplicate"
+            category="Duplicate",
+            datetime=self.duplicate_datetime
         )
         
         # Create a duplicate test transaction
         self.transaction_with_duplicate = Transaction.objects.create(
             description="Duplicate Transaction",  # Same description
             amount=Decimal('99.99'),  # Same amount
-            category="Original"
+            category="Original",
+            datetime=self.duplicate_datetime
         )
         
         # Create a rule for high amount transactions
@@ -397,7 +402,8 @@ class TransactionFlagTests(TestCase):
         data = {
             'description': 'Duplicate Transaction',  # Same as duplicate_transaction
             'amount': '99.99',  # Same as duplicate_transaction
-            'category': 'Test'
+            'category': 'Test',
+            'datetime': self.duplicate_datetime  # Same datetime is crucial for duplicate detection
         }
         
         # Use our utility directly instead of the viewset

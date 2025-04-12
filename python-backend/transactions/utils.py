@@ -380,28 +380,30 @@ def check_duplicates_bulk(transactions, preserve_resolution=True):
     # More targeted approach: find duplicates only among the transactions we're checking
     # and any existing transactions they might duplicate
     
-    # Get a list of all descriptions and amounts from our checking set
-    checking_data = transaction_queryset.filter(amount__isnull=False).values('description', 'amount')
+    # Get a list of all descriptions, amounts, and datetimes from our checking set
+    checking_data = transaction_queryset.filter(amount__isnull=False).values('description', 'amount', 'datetime')
     
     # If there are no valid transactions to check, return early
     if not checking_data:
         logger.info("No valid transactions to check, returning early")
         return duplicate_flags_map
     
-    # Get unique descriptions and amounts from our checking set
+    # Get unique descriptions, amounts, and datetimes from our checking set
     checking_descriptions = set(item['description'] for item in checking_data)
     checking_amounts = set(item['amount'] for item in checking_data)
+    checking_datetimes = set(item['datetime'] for item in checking_data)
     
-    logger.info(f"Checking {len(checking_descriptions)} descriptions and {len(checking_amounts)} amounts for duplicates")
+    logger.info(f"Checking {len(checking_descriptions)} descriptions, {len(checking_amounts)} amounts, and {len(checking_datetimes)} datetimes for duplicates")
     
-    # Find duplicate groups only for descriptions and amounts in our checking set
+    # Find duplicate groups only for descriptions, amounts, and datetimes in our checking set
     duplicates = (
         Transaction.objects.filter(
             amount__in=checking_amounts,
             description__in=checking_descriptions,
+            datetime__in=checking_datetimes,
             amount__isnull=False
         )
-        .values('amount', 'description')
+        .values('amount', 'description', 'datetime')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
     )
@@ -419,8 +421,8 @@ def check_duplicates_bulk(transactions, preserve_resolution=True):
     # Step 3: Fetch matching transactions more efficiently
     step3_start = time.time()
     
-    # Prepare a list of (amount, description) tuples for more targeted filtering
-    duplicate_criteria = [(item['amount'], item['description']) for item in duplicates]
+    # Prepare a list of (amount, description, datetime) tuples for more targeted filtering
+    duplicate_criteria = [(item['amount'], item['description'], item['datetime']) for item in duplicates]
     
     # If too many criteria, chunking the query might be necessary
     if len(duplicate_criteria) > 500:  # Arbitrary threshold for query size
@@ -429,8 +431,8 @@ def check_duplicates_bulk(transactions, preserve_resolution=True):
     # Build a more targeted query using Q objects
     from django.db.models import Q
     query = Q()
-    for amount, description in duplicate_criteria:
-        query |= Q(amount=amount, description=description)
+    for amount, description, datetime in duplicate_criteria:
+        query |= Q(amount=amount, description=description, datetime=datetime)
     
     # Execute the query with the optimized filter
     duplicate_transactions = Transaction.objects.filter(query)
@@ -444,12 +446,12 @@ def check_duplicates_bulk(transactions, preserve_resolution=True):
     step4_start = time.time()
     
     # Optimize by using a more efficient query to prefetch all data
-    duplicate_transactions = list(duplicate_transactions.only('id', 'amount', 'description'))
+    duplicate_transactions = list(duplicate_transactions.only('id', 'amount', 'description', 'datetime'))
     
-    # Group transactions by amount and description
+    # Group transactions by amount, description, and datetime
     transaction_groups = {}
     for txn in duplicate_transactions:
-        key = (txn.amount, txn.description)
+        key = (txn.amount, txn.description, txn.datetime)
         if key not in transaction_groups:
             transaction_groups[key] = []
         transaction_groups[key].append(txn)

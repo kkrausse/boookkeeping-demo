@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   useMutation,
   useQueryClient,
@@ -195,19 +195,18 @@ export function TransactionsPage() {
   const [filters, setFilters] = useState<FilterParams>({
     description: '',
     amountValue: '',
-    amountComparison: ''
+    amountComparison: '>'
   });
   const pageSize = 20; // Match the default in the backend
-
   // Create query parameters object
-  const queryParams: FetchTransactionsParams = {
+  const queryParams: FetchTransactionsParams = useMemo(() => ({
     page: currentPage,
     pageSize: pageSize,
     sort: currentSort,
-    filters: filters.description || (filters.amountValue && filters.amountComparison) 
-      ? filters 
+    filters: filters.description || (filters.amountValue && filters.amountComparison)
+      ? filters
       : undefined
-  };
+  }), [currentPage, pageSize, currentSort, filters]);
 
   // Fetch transactions with pagination
   const { data, isLoading, error } = useTransactions(queryParams);

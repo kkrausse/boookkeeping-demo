@@ -4,8 +4,9 @@ import {
   TransactionRule, 
   FilterCondition,
   useCreateTransactionRule, 
-  CreateRuleParams 
+  CreateRuleParams
 } from '../api/transactions';
+import { useQueryClient } from '@tanstack/react-query';
 import { PlusCircle, Check, Save, Loader2, Search } from 'lucide-react';
 import { ActionInputs, ActionData } from './ActionInputs';
 import './FilterInlinePanel.css';
@@ -20,7 +21,6 @@ type FilterInlinePanelProps = {
   showNotification: (type: 'success' | 'error', message: string) => void;
   totalCount?: number;
   flagCount?: number;
-  onCreateRule?: () => void;
 };
 
 export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
@@ -30,13 +30,22 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
   clearFilters,
   showNotification,
   totalCount,
-  flagCount,
-  onCreateRule
+  flagCount
 }) => {
   const [localFilters, setLocalFilters] = useState<FilterParams>({
     description: filters.description || '',
     amountValue: filters.amountValue || '',
-    amountComparison: filters.amountComparison || '>'
+    amountComparison: filters.amountComparison || ''
+  });
+  
+  const [showRulePanel, setShowRulePanel] = useState(false);
+  const [category, setCategory] = useState('');
+  const [flagMessage, setFlagMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const queryClient = useQueryClient();
+  const createRuleMutation = useCreateTransactionRule({
+    pollingInterval: 1000, // 1 second polling interval for real-time updates
   });
 
   // Update local filters when props change
@@ -44,7 +53,7 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
     setLocalFilters({
       description: filters.description || '',
       amountValue: filters.amountValue || '',
-      amountComparison: filters.amountComparison || '>'
+      amountComparison: filters.amountComparison || ''
     });
   }, [filters]);
 
@@ -65,12 +74,88 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
         localFilters.amountValue !== filters.amountValue ||
         localFilters.amountComparison !== filters.amountComparison
       ) {
+        console.log('changing filters', localFilters, filters)
         onFilterChange(localFilters);
       }
     }, 300); // Small debounce
     
     return () => clearTimeout(timer);
   }, [localFilters, filters, onFilterChange]);
+  
+  // Close rule panel when filters are cleared
+  useEffect(() => {
+    if (!isFiltersActive && showRulePanel) {
+      setShowRulePanel(false);
+    }
+  }, [isFiltersActive, showRulePanel]);
+  
+  const handleCreateRule = () => {
+    // Validation checks
+    if (!category && !flagMessage) {
+      showNotification('error', 'Please provide a category or flag message');
+      return;
+    }
+    
+    if (!(filters.description || (filters.amountValue && filters.amountComparison))) {
+      showNotification('error', 'Please set at least one filter condition');
+      return;
+    }
+    
+    // Create filter condition
+    const filterCondition: FilterCondition = {};
+    
+    // Add description filter if provided
+    if (localFilters.description) {
+      filterCondition.description__icontains = localFilters.description;
+    }
+    
+    // Add amount filter if both comparison and value are provided
+    if (localFilters.amountValue && localFilters.amountComparison) {
+      const amountValue = parseFloat(localFilters.amountValue);
+      
+      if (!isNaN(amountValue)) {
+        // Map the comparison type to the appropriate filter key
+        switch (localFilters.amountComparison) {
+          case '>':
+            filterCondition.amount__gt = amountValue;
+            break;
+          case '<':
+            filterCondition.amount__lt = amountValue;
+            break;
+          case '=':
+            filterCondition.amount = amountValue;
+            break;
+        }
+      }
+    }
+    
+    // Collect rule data
+    const ruleData: TransactionRule = {
+      filter_condition: filterCondition,
+      category: category || undefined,
+      flag_message: flagMessage || undefined
+    };
+    
+    setIsSubmitting(true);
+    
+    // Execute the mutation with the rule data (always apply to all)
+    createRuleMutation.mutate({
+      rule: ruleData,
+      applyToAll: true
+    }, {
+      onSuccess: () => {
+        showNotification('success', 'Rule created and applied to all transactions');
+        setShowRulePanel(false);
+        setCategory('');
+        setFlagMessage('');
+        setIsSubmitting(false);
+      },
+      onError: (error) => {
+        showNotification('error', error instanceof Error ? error.message : 'Failed to create rule');
+        setIsSubmitting(false);
+      }
+    });
+  };
 
   return (
     <div className="filter-inline-panel">
@@ -127,7 +212,66 @@ export const FilterInlinePanel: React.FC<FilterInlinePanelProps> = ({
             Clear
           </button>
         )}
+        
+        {isFiltersActive && (
+          <button 
+            className="inline-rule-button"
+            onClick={() => setShowRulePanel(!showRulePanel)}
+            title={showRulePanel ? "Hide rule form" : "Create a rule from current filters"}
+          >
+            {showRulePanel ? "Cancel Rule" : "Add Rule"}
+          </button>
+        )}
       </div>
+      
+      {showRulePanel && (
+        <div className="inline-rule-panel">
+          <div className="inline-rule-inputs">
+            <div className="inline-rule-input-group">
+              <input
+                id="category-input"
+                type="text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="Set category"
+                className="inline-rule-input"
+              />
+            </div>
+            
+            <div className="inline-rule-input-group">
+              <input
+                id="flag-input"
+                type="text"
+                value={flagMessage}
+                onChange={(e) => setFlagMessage(e.target.value)}
+                placeholder="Add flag message"
+                className="inline-rule-input"
+              />
+            </div>
+            
+            <button 
+              className="inline-create-rule-button"
+              onClick={handleCreateRule}
+              disabled={isSubmitting || (!category && !flagMessage)}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="inline-spinner-icon" size={14} />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Save size={14} />
+                  Create Rule
+                </>
+              )}
+            </button>
+          </div>
+          <div className="inline-rule-hint">
+            This rule will apply to all transactions matching your current filters
+          </div>
+        </div>
+      )}
     </div>
   );
 };

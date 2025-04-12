@@ -151,6 +151,112 @@
   cursor: not-allowed;
 }
 
+.inline-rule-button {
+  background-color: #f0f4f8;
+  color: #666;
+  border: 1px solid #e0e0e0;
+  padding: 0 10px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  float: left;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-rule-button:hover {
+  background-color: #e3edfb;
+  color: #4a90e2;
+}
+
+.inline-rule-panel {
+  width: 100%;
+  padding: 0px 0;
+  clear: both;
+  margin-top: 12px;
+}
+
+.inline-rule-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.inline-rule-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inline-rule-input-group label {
+  font-size: 12px;
+  color: #555;
+}
+
+.inline-rule-input {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  font-size: 14px;
+  transition: border-color 0.2s;
+  height: 32px;
+  width: 180px;
+}
+
+.inline-rule-input:focus {
+  border-color: #4a90e2;
+  outline: none;
+}
+
+.inline-create-rule-button {
+  background-color: #4a90e2;
+  color: white;
+  padding: 0 12px;
+  height: 32px;
+  border-radius: 4px;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-create-rule-button:hover:not(:disabled) {
+  background-color: #3a7bc8;
+}
+
+.inline-create-rule-button:disabled {
+  background-color: #b3d4fc;
+  cursor: not-allowed;
+}
+
+.inline-spinner-icon {
+  animation: spin 1s linear infinite;
+}
+
+.inline-rule-hint {
+  font-size: 12px;
+  color: #777;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media screen and (max-width: 1024px) {
   .inline-filter-controls {
     flex-wrap: wrap;

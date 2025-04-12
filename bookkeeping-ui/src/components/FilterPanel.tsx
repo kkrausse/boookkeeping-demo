@@ -40,7 +40,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Rule creation state
   const [isAddingRule, setIsAddingRule] = useState(false);
   const [actionData, setActionData] = useState<ActionData>({});
-  const [applyToAll, setApplyToAll] = useState(false);
 
   // Update local filters when props change
   useEffect(() => {
@@ -78,10 +77,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Toggle rule creation mode
   const toggleRuleCreation = () => {
     setIsAddingRule(!isAddingRule);
-    // Reset action data and apply to all when toggling
+    // Reset action data when toggling
     if (!isAddingRule) {
       setActionData({});
-      setApplyToAll(false);
     }
   };
 
@@ -146,23 +144,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       return;
     }
 
-    // Execute the mutation with the rule data and apply to all flag
+    // Execute the mutation with the rule data (always apply to all)
     createRuleMutation.mutate({
       rule: ruleData,
-      applyToAll: applyToAll
+      applyToAll: true
     }, {
       onSuccess: (data) => {
-        // Customize message based on whether we applied to all
-        const successMessage = applyToAll 
-          ? 'Rule created and applied to all transactions' 
-          : 'Rule created successfully';
-          
+        // Show success message
+        const successMessage = 'Rule created and applied to all transactions';
+        
         showNotification('success', successMessage);
         
         // Reset rule creation state
         setIsAddingRule(false);
         setActionData({});
-        setApplyToAll(false);
       },
       onError: (error) => {
         // Show error notification
@@ -291,20 +286,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             />
           </div>
           
-          <div className="rule-options">
-            <div className="apply-all-option">
-              <input
-                type="checkbox"
-                id="apply-all-checkbox"
-                checked={applyToAll}
-                onChange={(e) => setApplyToAll(e.target.checked)}
-                disabled={createRuleMutation.isPending}
-              />
-              <label htmlFor="apply-all-checkbox">
-                Apply to all existing transactions
-              </label>
-            </div>
-          </div>
+          {/* Rule options section removed as we now always apply to all transactions */}
           
           <div className="rule-actions">
             <button 
@@ -315,12 +297,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               {createRuleMutation.isPending ? (
                 <>
                   <Loader2 className="spinner-icon" size={16} />
-                  {applyToAll ? "Creating & Applying..." : "Creating..."}
+                  Creating & Applying...
                 </>
               ) : (
                 <>
                   <Save size={16} />
-                  {applyToAll ? "Create & Apply Rule" : "Create Rule"}
+                  Create & Apply Rule
                 </>
               )}
             </button>

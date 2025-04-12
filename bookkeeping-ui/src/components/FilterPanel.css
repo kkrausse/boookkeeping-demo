@@ -169,28 +169,7 @@
   margin-top: 8px;
 }
 
-.apply-all-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px;
-  background-color: #f8f8f8;
-  border-radius: 6px;
-  border: 1px dashed #ddd;
-}
-
-.apply-all-option input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-
-.apply-all-option label {
-  font-size: 14px;
-  color: #555;
-  cursor: pointer;
-  user-select: none;
-}
+/* apply-all-option styles removed since we now always apply to all transactions */
 
 .rule-option {
   border: 1px solid #e0e0e0;

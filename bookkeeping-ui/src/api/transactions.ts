@@ -423,6 +423,7 @@ export async function updateTransactionRule(rule: TransactionRule & { id: number
 export interface RuleApplyResponse {
   rule_id?: number;
   updated_count: number;
+  flag_count: number;
 }
 
 // Hook for applying all rules with real-time updates

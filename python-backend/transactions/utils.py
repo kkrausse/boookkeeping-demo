@@ -969,6 +969,13 @@ def create_clean_transactions(data_list):
     transactions_to_create = [Transaction(**clean_data) for clean_data in cleaned_data_list]
     created_transactions = Transaction.objects.bulk_create(transactions_to_create)
     
+    # Create a map to associate each created transaction with its original index
+    # This is crucial for maintaining order later
+    for i, txn in enumerate(created_transactions):
+        if i < len(valid_original_data):
+            # Add the index to the original data as a reference point
+            valid_original_data[i]['_original_index'] = i
+    
     return created_transactions, cleaned_data_list, valid_original_data
 
 def create_transactions_with_flags_bulk(data_list):
@@ -1007,7 +1014,7 @@ def create_transactions_with_flags_bulk(data_list):
     step1_start = time.time()
     created_transactions, cleaned_data_list, original_data_list = create_clean_transactions(data_list)
     step1_end = log_timing("Step 1: Bulk create transactions", step1_start)
-    
+
     if not created_transactions:
         return [], {}
     
@@ -1026,6 +1033,8 @@ def create_transactions_with_flags_bulk(data_list):
     step2_end = log_timing("Step 2: Apply transaction rules", step2_start)
     
     # Need to refresh transactions from the database to get their updated values and IDs
+    # Note: The order of refreshed_transactions may not match the original order of created_transactions
+    # We'll handle this in Step 4 by maintaining a mapping of transaction IDs to their original indices
     step3_start = time.time()
     transaction_ids = [t.id for t in created_transactions]
     refreshed_transactions = list(Transaction.objects.filter(id__in=transaction_ids))
@@ -1034,9 +1043,19 @@ def create_transactions_with_flags_bulk(data_list):
     # Step 4: Create a mapping of transaction ID to original data
     step4_start = time.time()
     original_data_map = {}
-    for i, transaction in enumerate(refreshed_transactions):
-        if i < len(original_data_list):
-            original_data_map[transaction.id] = original_data_list[i]
+    
+    # Create a dictionary mapping transaction IDs to their original data
+    # using the _original_index we stored in the original data
+    transaction_id_to_index = {t.id: i for i, t in enumerate(created_transactions)}
+    
+    for transaction in refreshed_transactions:
+        # Find the original transaction's index in the created_transactions list
+        if transaction.id in transaction_id_to_index:
+            orig_index = transaction_id_to_index[transaction.id]
+            # Use that index to get the correct original data
+            if orig_index < len(original_data_list):
+                original_data_map[transaction.id] = original_data_list[orig_index]
+    
     step4_end = log_timing("Step 4: Create original data map", step4_start)
     
     # Step 5: Use the bulk validation flag function to create validation flags

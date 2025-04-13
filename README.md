@@ -31,6 +31,8 @@ cd bookkeeping-ui && npm install && npm run dev
 
 ## Development
 
+sample data in `python-backend/demo_data`
+
 ### Common Commands
 
 - UI: `cd bookkeeping-ui && npm run dev` - Start UI dev server
@@ -55,24 +57,11 @@ cd bookkeeping-ui && npm install && npm run dev
 - `PUT /rules/{id}/` - Update a rule
 - `DELETE /rules/{id}/` - Delete a rule
 
-## Key Features Implementation
+## Implementation
 
 ### Duplicate Detection
 
-The system detects potential duplicate transactions by comparing:
-- Transaction amount
-- Transaction description
-- Transaction datetime
-
-This helps prevent double-counting of the same transaction while avoiding false positives.
-
-### Transaction Rules
-
-Rules can be created with conditions such as:
-- Amount greater/less than a value
-- Description containing specific text
-- Category matching specific criteria
-
-Actions that can be performed by rules:
-- Automatically set a category
-- Flag transactions for review
+duplicates are transactions with same:
+- amount
+- description
+- datetime
